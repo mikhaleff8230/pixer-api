@@ -3,7 +3,10 @@
 /public/storage
 /storage/*.key
 /storage/framework/cache
+/storage/framework/sessions/*
+/storage/framework/views/*
 /storage/debugbar
+/storage/logs/*.log
 /vendor
 .env
 .env.*
@@ -20,3 +23,12 @@ docker-compose.yml
 
 # IDE
 .idea/
+
+# Local backups
+*.sql
+*.log
+*.backup
+*.bak
+*_OLD*
+*_REL*
+*.sancan-broken-backup

@@ -1518,3 +1518,38 @@ Route::get('/geocoder/reverse', function (Request $request) {
 Route::get('/yml-feed', [YmlFeedController::class, 'index']);
 Route::get('/yml-feed/{page?}', [YmlFeedController::class, 'index']);
 
+
+// Second Life Marketplace API routes
+Route::get('/seller/tax-statuses', [App\Http\Controllers\SecondLife\DictionaryController::class, 'taxStatuses']);
+Route::get('/product-origin-types', [App\Http\Controllers\SecondLife\DictionaryController::class, 'productOriginTypes']);
+Route::get('/product-conditions', [App\Http\Controllers\SecondLife\DictionaryController::class, 'productConditions']);
+
+Route::middleware('auth:api')->group(function () {
+    Route::get('/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'index']);
+    Route::post('/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'store']);
+    Route::put('/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'update']);
+    Route::delete('/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'destroy']);
+
+    Route::post('/products/{id}/publish', App\Http\Controllers\SecondLife\ProductPublishController::class);
+
+    Route::post('/orders', [App\Http\Controllers\SecondLife\OrderController::class, 'store']);
+    Route::post('/orders/{id}/mark-paid', [App\Http\Controllers\SecondLife\OrderController::class, 'markPaid']);
+    Route::post('/orders/{id}/confirm-payment', [App\Http\Controllers\SecondLife\OrderController::class, 'confirmPayment']);
+    Route::post('/orders/{id}/complete', [App\Http\Controllers\SecondLife\OrderController::class, 'complete']);
+
+    Route::get('/seller/balance/transactions', [App\Http\Controllers\SecondLife\SellerController::class, 'balanceTransactions']);
+    Route::get('/seller/rating', [App\Http\Controllers\SecondLife\SellerController::class, 'rating']);
+    Route::post('/seller/agreements', [App\Http\Controllers\SecondLife\SellerController::class, 'acceptAgreement']);
+});
+
+// Seller AI services API routes
+Route::middleware('auth:api')->group(function () {
+    Route::get('/ai/services', [App\Http\Controllers\Ai\AiServiceController::class, 'services']);
+    Route::post('/ai/jobs', [App\Http\Controllers\Ai\AiServiceController::class, 'createJob']);
+    Route::get('/ai/jobs/{id}', [App\Http\Controllers\Ai\AiServiceController::class, 'showJob']);
+    Route::post('/ai/jobs/{id}/confirm', [App\Http\Controllers\Ai\AiServiceController::class, 'confirm']);
+    Route::post('/ai/jobs/{id}/cancel', [App\Http\Controllers\Ai\AiServiceController::class, 'cancel']);
+    Route::post('/ai/jobs/{id}/apply', [App\Http\Controllers\Ai\AiServiceController::class, 'apply']);
+    Route::post('/ai/jobs/{id}/reject', [App\Http\Controllers\Ai\AiServiceController::class, 'reject']);
+    Route::get('/seller/ai/jobs', [App\Http\Controllers\Ai\AiServiceController::class, 'sellerJobs']);
+});

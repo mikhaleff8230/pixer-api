@@ -1,0 +1,58 @@
+﻿services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.sancan
+    working_dir: /var/www/html
+    env_file:
+      - .env.sancan-docker
+    environment:
+      COMPOSER_PROCESS_TIMEOUT: "1800"
+    ports:
+      - "8002:8000"
+    extra_hosts:
+      - "api.github.com:140.82.121.6"
+      - "codeload.github.com:140.82.121.10"
+    volumes:
+      - .:/var/www/html
+      - composer_cache:/tmp/composer-cache
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    command: >
+      sh -lc "mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/testing storage/framework/views bootstrap/cache
+      && (test -f vendor/autoload.php || composer install --no-interaction --prefer-dist --no-dev)
+      && (php artisan storage:link || true)
+      && php artisan migrate --force
+      && php artisan optimize:clear
+      && php artisan serve --host=0.0.0.0 --port=8000"
+
+  mysql:
+    image: mysql:8.0
+    platform: linux/x86_64
+    environment:
+      MYSQL_DATABASE: marvel_laravel
+      MYSQL_USER: marvel_laravel
+      MYSQL_PASSWORD: sancan
+      MYSQL_ROOT_PASSWORD: sancan
+    ports:
+      - "3308:3306"
+    volumes:
+      - sancan_mysql:/var/lib/mysql
+      - ./backup_before_migration.sql:/docker-entrypoint-initdb.d/01-backup.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-umarvel_laravel", "-psancan"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+
+volumes:
+  composer_cache:
+  sancan_mysql:

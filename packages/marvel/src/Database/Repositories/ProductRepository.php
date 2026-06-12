@@ -1706,6 +1706,13 @@ class ProductRepository extends BaseRepository
         $this->syncProductCourse($product->fresh(), $request);
 
         return $product;
+    }
+
+    /*
+     * Duplicate legacy tail left from a previous merge. Keep it inert so the
+     * repository can autoload; the active updateProduct implementation ends
+     * above.
+     *
     // <-- Конец метода updateProduct
 
             $product->load('videos');
@@ -1792,6 +1799,8 @@ class ProductRepository extends BaseRepository
             Log::info('=== ProductRepository::updateProduct - END (SUCCESS) ===');
             return $product;
     }
+
+    */
 
     public function getBestSellingProducts($request)
     {
