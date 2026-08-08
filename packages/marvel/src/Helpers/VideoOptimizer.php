@@ -223,36 +223,19 @@ class VideoOptimizer
      */
     private static function buildFullUrl($path)
     {
-        if (empty($path)) return null;
-        
-        // Если уже полный URL
-        if (filter_var($path, FILTER_VALIDATE_URL)) {
-            return $path;
+        if (empty($path)) {
+            return null;
         }
 
-        $base = env('ASSETS_BASE_URL');
-        
-        if ($base) {
-            if (str_starts_with($path, '/storage/')) {
-                $path = substr($path, strlen('/storage/'));
-            }
-            $fullUrl = rtrim($base, '/') . '/' . ltrim($path, '/');
-            return $fullUrl;
+        $url = \App\Support\MediaUrl::publicUrl($path);
+        if ($url) {
+            return $url;
         }
 
-        // Попробуем построить URL через настроенное хранилище S3
-        try {
-            if (config('filesystems.disks.s3.bucket')) {
-                return Storage::disk('s3')->url(ltrim($path, '/'));
-            }
-        } catch (\Throwable $exception) {
-            // Игнорируем и используем старый fallback
-        }
-
-        // Fallback: старое поведение через домен API
         if (str_starts_with($path, '/storage/')) {
             return 'https://api.sancan.ru' . $path;
         }
+
         return 'https://api.sancan.ru/storage/' . ltrim($path, '/');
     }
 }

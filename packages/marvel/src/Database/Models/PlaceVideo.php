@@ -112,58 +112,19 @@ class PlaceVideo extends Model
      */
     private function buildFullUrl($path)
     {
-        if (empty($path)) return null;
-        
-        // Если уже полный URL
-        if (filter_var($path, FILTER_VALIDATE_URL)) {
-            return $path;
+        if (empty($path)) {
+            return null;
         }
 
-        $base = env('ASSETS_BASE_URL');
-        
-        // Отладка для первого видео
-        if ($this->place_id == 1) {
-            \Log::info('PlaceVideo::buildFullUrl - отладка', [
-                'place_id' => $this->place_id,
-                'input_path' => $path,
-                'env_assets_base_url' => $base,
-                'path_type' => gettype($path),
-                'path_length' => is_string($path) ? strlen($path) : 'N/A'
-            ]);
-        }
-        
-        if ($base) {
-            if (str_starts_with($path, '/storage/')) {
-                $path = substr($path, strlen('/storage/'));
-            }
-            $fullUrl = rtrim($base, '/') . '/' . ltrim($path, '/');
-            
-            // Отладка для первого видео
-            if ($this->place_id == 1) {
-                \Log::info('PlaceVideo::buildFullUrl - результат', [
-                    'place_id' => $this->place_id,
-                    'input_path' => $path,
-                    'base' => $base,
-                    'full_url' => $fullUrl
-                ]);
-            }
-            
-            return $fullUrl;
+        $url = \App\Support\MediaUrl::publicUrl($path);
+        if ($url) {
+            return $url;
         }
 
-        // Попробуем построить URL через настроенное хранилище S3
-        try {
-            if (config('filesystems.disks.s3.bucket')) {
-                return Storage::disk('s3')->url(ltrim($path, '/'));
-            }
-        } catch (\Throwable $exception) {
-            // Игнорируем и используем старый fallback
-        }
-
-        // Fallback: старое поведение через домен API
         if (str_starts_with($path, '/storage/')) {
             return 'https://api.sancan.ru' . $path;
         }
+
         return 'https://api.sancan.ru/storage/' . ltrim($path, '/');
     }
 

@@ -657,20 +657,19 @@ class Product extends Model
     }
 
     /**
-     * Удаляет изображение из S3 по URL
+     * Удаляет изображение из S3 по URL или относительному ключу
      */
     private function deleteImageFromS3($url)
     {
         try {
-            // Извлекаем ключ из URL S3
-            if (strpos($url, 's3.twcstorage.ru') !== false) {
-                $parsedUrl = parse_url($url);
-                $key = ltrim($parsedUrl['path'], '/');
-                
-                if (Storage::disk('s3')->exists($key)) {
-                    Storage::disk('s3')->delete($key);
-                    Log::info('Image deleted from S3', ['key' => $key]);
-                }
+            $key = \App\Support\MediaUrl::objectKey($url);
+            if (!$key) {
+                return;
+            }
+
+            if (Storage::disk('s3')->exists($key)) {
+                Storage::disk('s3')->delete($key);
+                Log::info('Image deleted from S3', ['key' => $key]);
             }
         } catch (\Exception $e) {
             Log::warning('Failed to delete image from S3', [

@@ -381,16 +381,18 @@ PROMPT;
 
     private function storePublicImage(string $binary, string $extension): string
     {
-        $diskName = (string) config('filesystems.default', 'public');
+        $diskName = config('filesystems.disks.s3.bucket')
+            ? 's3'
+            : (string) config('filesystems.default', 'public');
         $path = 'ai-results/' . date('Y/m') . '/' . Str::uuid() . '.' . ltrim($extension, '.');
 
-        Storage::disk($diskName)->put($path, $binary, 'public');
+        Storage::disk($diskName)->put($path, $binary, [
+            'visibility' => 'public',
+            'ContentType' => 'image/' . ($extension === 'jpg' ? 'jpeg' : $extension),
+            'CacheControl' => 'public, max-age=31536000, immutable',
+        ]);
 
-        $assetsBase = env('ASSETS_BASE_URL');
-        if ($assetsBase) {
-            return rtrim($assetsBase, '/') . '/' . ltrim($path, '/');
-        }
-
-        return Storage::disk($diskName)->url($path);
+        return \App\Support\MediaUrl::publicUrl($path)
+            ?: Storage::disk($diskName)->url($path);
     }
 }
