@@ -83,7 +83,10 @@ Route::get('/csrf-token', function () {
 Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'index']);
 Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN])->prefix('admin')->group(function () {
     Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'adminIndex']);
-    Route::post('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'update']);
+    Route::post('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'store']);
+    Route::post('/homepage-banners/settings', [App\Http\Controllers\HomepageBannerController::class, 'updateSettings']);
+    Route::post('/homepage-banners/{banner}', [App\Http\Controllers\HomepageBannerController::class, 'updateOne']);
+    Route::delete('/homepage-banners/{banner}', [App\Http\Controllers\HomepageBannerController::class, 'destroy']);
 });
 
 // Маршрут для приема платежей ЮKassa (только для продакшена)

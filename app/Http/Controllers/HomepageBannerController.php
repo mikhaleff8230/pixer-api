@@ -11,6 +11,48 @@ use Illuminate\Validation\Rule;
 
 class HomepageBannerController extends Controller
 {
+    private function bannerData(Request $request): array
+    {
+        return $request->validate([
+            'kind' => ['required', Rule::in(['hero', 'strip'])],
+            'is_active' => ['required', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'content' => ['required', 'array'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,webp,avif', 'max:8192'],
+        ]);
+    }
+
+    private function saveBanner(Request $request, HomepageBanner $banner): HomepageBanner
+    {
+        $data = $this->bannerData($request);
+        $content = $data['content'];
+        if ($request->hasFile('image')) {
+            if (!empty($banner->content['background_image'])) Storage::disk('public')->delete($banner->content['background_image']);
+            $content['background_image'] = $request->file('image')->store('homepage-banners', 'public');
+        }
+        $banner->fill([
+            'kind' => $data['kind'],
+            'is_active' => $data['is_active'],
+            'sort_order' => $data['sort_order'] ?? (HomepageBanner::max('sort_order') + 1),
+            'content' => $content,
+        ])->save();
+        return $banner->fresh();
+    }
+
+    public function store(Request $request) { return response()->json($this->saveBanner($request, new HomepageBanner()), 201); }
+    public function updateOne(Request $request, HomepageBanner $banner) { return $this->saveBanner($request, $banner); }
+    public function updateSettings(Request $request)
+    {
+        $data = $request->validate(['autoplay' => ['required', 'boolean'], 'interval_ms' => ['required', 'integer', 'min:1500', 'max:60000']]);
+        return HomepageBannerSetting::query()->updateOrCreate(['id' => HomepageBannerSetting::value('id') ?? 1], $data);
+    }
+    public function destroy(HomepageBanner $banner)
+    {
+        if (!empty($banner->content['background_image'])) Storage::disk('public')->delete($banner->content['background_image']);
+        $banner->delete();
+        return response()->noContent();
+    }
+
     public function index()
     {
         $settings = HomepageBannerSetting::first();
