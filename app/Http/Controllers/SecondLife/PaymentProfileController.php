@@ -57,6 +57,11 @@ class PaymentProfileController extends Controller
 
     private function validatePayload(Request $request, bool $partial = false): array
     {
+        if ($request->filled('phone')) {
+            $digits = preg_replace('/\D+/', '', (string) $request->input('phone'));
+            if (strlen($digits) === 11 && str_starts_with($digits, '8')) $digits = '7'.substr($digits, 1);
+            $request->merge(['phone' => '+'.$digits]);
+        }
         $required = $partial ? 'sometimes' : 'required';
 
         return $request->validate([
