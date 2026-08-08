@@ -25,7 +25,13 @@ trait CalculatePaymentTrait
                     $subtotal += $this->calculateEachItemTotal($variation, $item['order_quantity']);
                 } else {
                     $product = Product::findOrFail($item['product_id']);
-                    $subtotal += $this->calculateEachItemTotal($product, $item['order_quantity']);
+                    $itemTotal = $this->calculateEachItemTotal($product, $item['order_quantity']);
+                    if (($item['payment_method'] ?? null) === 'site_payment' && $product->is_personal_item) {
+                        $product->loadMissing('shop.balance');
+                        $commissionRate = max(0, (float) ($product->shop?->balance?->admin_commission_rate ?? 0));
+                        $itemTotal *= (1 + $commissionRate / 100);
+                    }
+                    $subtotal += $itemTotal;
                 }
             }
             return $subtotal;

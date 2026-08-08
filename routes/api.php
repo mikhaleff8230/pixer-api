@@ -80,6 +80,12 @@ Route::get('/csrf-token', function () {
     return response()->json(['token' => csrf_token()]);
 });
 
+Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'index']);
+Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN])->prefix('admin')->group(function () {
+    Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'adminIndex']);
+    Route::post('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'update']);
+});
+
 // Маршрут для приема платежей ЮKassa (только для продакшена)
 Route::post('/custom-yookassa-order', [CustomYooKassaOrderController::class, 'create']);
 // Совместимый fallback endpoint для ручного подтверждения оплаты (используется фронтом при 403 на access)
@@ -1523,23 +1529,39 @@ Route::get('/yml-feed/{page?}', [YmlFeedController::class, 'index']);
 Route::get('/seller/tax-statuses', [App\Http\Controllers\SecondLife\DictionaryController::class, 'taxStatuses']);
 Route::get('/product-origin-types', [App\Http\Controllers\SecondLife\DictionaryController::class, 'productOriginTypes']);
 Route::get('/product-conditions', [App\Http\Controllers\SecondLife\DictionaryController::class, 'productConditions']);
+Route::get('/second-life/products/{productId}/payment-options', [App\Http\Controllers\SecondLife\OrderController::class, 'paymentOptions']);
+Route::get('/second-life/products/{productId}/payment-options', [App\Http\Controllers\SecondLife\OrderController::class, 'paymentOptions']);
 
 Route::middleware('auth:api')->group(function () {
-    Route::get('/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'index']);
-    Route::post('/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'store']);
-    Route::put('/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'update']);
-    Route::delete('/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'destroy']);
+    Route::get('/seller/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'index']);
+    Route::post('/seller/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'store']);
+    Route::get('/seller/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'show']);
+    Route::put('/seller/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'update']);
+    Route::delete('/seller/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'destroy']);
+    Route::post('/seller/payment-profiles/{id}/set-default', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'setDefault']);
+    Route::post('/seller/payment-profiles/{id}/activate', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'activate']);
+    Route::post('/seller/payment-profiles/{id}/deactivate', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'deactivate']);
 
     Route::post('/products/{id}/publish', App\Http\Controllers\SecondLife\ProductPublishController::class);
 
-    Route::post('/orders', [App\Http\Controllers\SecondLife\OrderController::class, 'store']);
-    Route::post('/orders/{id}/mark-paid', [App\Http\Controllers\SecondLife\OrderController::class, 'markPaid']);
-    Route::post('/orders/{id}/confirm-payment', [App\Http\Controllers\SecondLife\OrderController::class, 'confirmPayment']);
-    Route::post('/orders/{id}/complete', [App\Http\Controllers\SecondLife\OrderController::class, 'complete']);
+    Route::post('/second-life/orders', [App\Http\Controllers\SecondLife\OrderController::class, 'store'])->middleware('throttle:10,1');
+    Route::get('/second-life/orders/{publicId}', [App\Http\Controllers\SecondLife\OrderController::class, 'show']);
+    Route::post('/second-life/orders/{publicId}/mark-paid', [App\Http\Controllers\SecondLife\OrderController::class, 'markPaid'])->middleware('throttle:5,1');
+    Route::post('/second-life/orders/{publicId}/confirm-payment', [App\Http\Controllers\SecondLife\OrderController::class, 'confirmPayment']);
+    Route::post('/second-life/orders/{publicId}/reject-payment', [App\Http\Controllers\SecondLife\OrderController::class, 'rejectPayment']);
+    Route::post('/second-life/orders/{publicId}/cancel', [App\Http\Controllers\SecondLife\OrderController::class, 'cancel']);
+    Route::post('/second-life/orders/{publicId}/open-dispute', [App\Http\Controllers\SecondLife\OrderController::class, 'openDispute']);
+    Route::get('/second-life/orders/{publicId}/proof/{confirmation}', [App\Http\Controllers\SecondLife\OrderController::class, 'proof']);
+    Route::get('/second-life/orders/{publicId}/qr', [App\Http\Controllers\SecondLife\OrderController::class, 'qr']);
 
     Route::get('/seller/balance/transactions', [App\Http\Controllers\SecondLife\SellerController::class, 'balanceTransactions']);
     Route::get('/seller/rating', [App\Http\Controllers\SecondLife\SellerController::class, 'rating']);
     Route::post('/seller/agreements', [App\Http\Controllers\SecondLife\SellerController::class, 'acceptAgreement']);
+    Route::get('/admin/second-life/payment-profiles', [App\Http\Controllers\SecondLife\AdminController::class, 'profiles']);
+    Route::get('/admin/second-life/orders', [App\Http\Controllers\SecondLife\AdminController::class, 'orders']);
+    Route::get('/admin/second-life/orders/{id}', [App\Http\Controllers\SecondLife\AdminController::class, 'order']);
+    Route::post('/admin/second-life/orders/{id}/action', [App\Http\Controllers\SecondLife\AdminController::class, 'action']);
+    Route::get('/admin/second-life/payment-confirmations', [App\Http\Controllers\SecondLife\AdminController::class, 'confirmations']);
 });
 
 // Seller AI services API routes

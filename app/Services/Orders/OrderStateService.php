@@ -1,0 +1,4 @@
+<?php
+namespace App\Services\Orders;
+use App\Models\SecondLifeOrder; use Illuminate\Validation\ValidationException;
+class OrderStateService { private array $map=['created'=>['reserved','cancelled'],'reserved'=>['waiting_payment','cancelled'],'waiting_payment'=>['buyer_marked_paid','cancelled'],'buyer_marked_paid'=>['paid','payment_not_found','disputed','cancelled'],'payment_not_found'=>['disputed','buyer_marked_paid','cancelled'],'paid'=>['preparing_shipment','completed','disputed'],'preparing_shipment'=>['shipped','disputed'],'shipped'=>['completed','disputed']]; public function transition(SecondLifeOrder $o,string $to,?string $payment=null):void{if($o->order_status!==$to&&!in_array($to,$this->map[$o->order_status]??[],true))throw ValidationException::withMessages(['status'=>"Недопустимый переход {$o->order_status} → {$to}"]);$v=['order_status'=>$to];if($payment)$v['payment_status']=$payment;$o->update($v);}}

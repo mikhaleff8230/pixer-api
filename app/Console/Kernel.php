@@ -28,6 +28,7 @@ class Kernel extends ConsoleKernel
         Commands\CheckBalanceDeposits::class,
         Commands\CheckSellerBalance::class,
         Commands\GenerateSitemap::class,
+        Commands\CancelExpiredSecondLifeReservations::class,
     ];
 
     /**
@@ -65,6 +66,7 @@ class Kernel extends ConsoleKernel
         
         // Генерация sitemap ежедневно в 3:00
         $schedule->command('sitemap:generate')->dailyAt('03:00');
+        $schedule->command('orders:cancel-expired-reservations')->everyMinute()->withoutOverlapping();
     }
 
     /**

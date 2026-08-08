@@ -42,6 +42,8 @@ class Product extends Model
         'account_data' => 'array',
         'subscription_data' => 'array',
         'key_data' => 'array',
+        'reserved_at' => 'datetime',
+        'reserved_until' => 'datetime',
     ];
 
     protected $appends = [

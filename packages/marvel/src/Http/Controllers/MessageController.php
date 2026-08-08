@@ -131,6 +131,13 @@ class MessageController extends CoreController
      */
     public function storeMessage(Request $request)
     {
+        $request->validate([
+            'conversation_id' => ['required', 'integer', 'exists:conversations,id'],
+            'body' => ['nullable', 'required_without:attachments', 'string', 'max:10000'],
+            'attachments' => ['nullable', 'array', 'max:10'],
+            'attachments.*' => ['file', 'max:10240'],
+        ]);
+
         return $this->repository->storeMessage($request);
     }
 

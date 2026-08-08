@@ -15,6 +15,9 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         // 'App\Models\Model' => 'App\Policies\ModelPolicy',
         \Marvel\Database\Models\Comment::class => \Marvel\Policies\CommentPolicy::class,
+        \App\Models\PaymentProfile::class => \App\Policies\PaymentProfilePolicy::class,
+        \App\Models\SecondLifeOrder::class => \App\Policies\OrderPolicy::class,
+        \App\Models\PaymentConfirmation::class => \App\Policies\PaymentConfirmationPolicy::class,
     ];
 
     /**

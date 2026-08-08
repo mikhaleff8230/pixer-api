@@ -1,146 +1,19 @@
 <?php
-
 namespace App\Http\Controllers\SecondLife;
-
-use App\Http\Controllers\Controller;
-use App\Models\PaymentProfile;
-use App\Models\SecondLifeOrder;
-use App\Services\SellerBalanceService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Marvel\Database\Models\Product;
-use Marvel\Database\Models\Shop;
-use Marvel\Database\Models\User;
-
-class OrderController extends Controller
-{
-    public function store(Request $request)
-    {
-        $data = $request->validate([
-            'product_id' => ['required', 'integer'],
-            'payment_method' => ['sometimes', 'string', 'in:direct_sbp,cash,external_delivery,safe_deal'],
-        ]);
-
-        $buyer = $request->user();
-        $product = Product::findOrFail($data['product_id']);
-        $sellerId = $this->resolveSellerId($product);
-
-        if (!$sellerId) {
-            return response()->json(['message' => 'У товара не найден продавец.'], 422);
-        }
-
-        $paymentProfile = PaymentProfile::where('user_id', $sellerId)
-            ->active()
-            ->default()
-            ->first();
-
-        if (!$paymentProfile) {
-            return response()->json(['message' => 'У продавца нет активного платежного профиля.'], 422);
-        }
-
-        $order = DB::transaction(function () use ($buyer, $sellerId, $product, $paymentProfile, $data) {
-            $price = $product->sale_price ?? $product->price ?? $product->min_price ?? 0;
-
-            $order = SecondLifeOrder::create([
-                'buyer_id' => $buyer->id,
-                'seller_id' => $sellerId,
-                'product_id' => $product->id,
-                'payment_profile_id' => $paymentProfile->id,
-                'price' => $price,
-                'platform_fee' => 0,
-                'payment_method' => $data['payment_method'] ?? 'direct_sbp',
-                'payment_status' => 'waiting_payment',
-                'order_status' => 'reserved',
-                'receiver_name' => $paymentProfile->receiver_name,
-                'phone' => $paymentProfile->phone,
-                'bank_name' => $paymentProfile->bank_name,
-                'company_name' => $paymentProfile->company_name,
-                'inn' => $paymentProfile->inn,
-                'sbp_qr_url' => $paymentProfile->sbp_qr_url,
-            ]);
-
-            $product->forceFill(['reserved_at' => now()])->save();
-
-            return $order;
-        });
-
-        return response()->json([
-            'order' => $order,
-            'payment_notice' => [
-                'Вы переводите деньги напрямую продавцу.',
-                'SANCAN не принимает оплату за товар.',
-                'Платформа не является стороной платежа.',
-            ],
-        ], 201);
-    }
-
-    public function markPaid(Request $request, int $id)
-    {
-        $order = SecondLifeOrder::where('buyer_id', $request->user()->id)->findOrFail($id);
-        $data = $request->validate([
-            'buyer_payment_comment' => ['nullable', 'string'],
-            'buyer_payment_screenshot' => ['nullable', 'string'],
-        ]);
-
-        $order->update([
-            'payment_status' => 'buyer_marked_paid',
-            'buyer_payment_comment' => $data['buyer_payment_comment'] ?? $order->buyer_payment_comment,
-            'buyer_payment_screenshot' => $data['buyer_payment_screenshot'] ?? $order->buyer_payment_screenshot,
-            'buyer_marked_paid_at' => now(),
-        ]);
-
-        return response()->json($order->fresh());
-    }
-
-    public function confirmPayment(Request $request, int $id, SellerBalanceService $balanceService)
-    {
-        $order = SecondLifeOrder::where('seller_id', $request->user()->id)->findOrFail($id);
-
-        $order->update([
-            'payment_status' => 'seller_confirmed_paid',
-            'order_status' => 'paid',
-            'seller_confirmed_at' => now(),
-        ]);
-
-        return response()->json($order->fresh());
-    }
-
-    public function complete(Request $request, int $id)
-    {
-        $order = SecondLifeOrder::where(function ($query) use ($request) {
-                $query->where('buyer_id', $request->user()->id)
-                    ->orWhere('seller_id', $request->user()->id);
-            })
-            ->findOrFail($id);
-
-        $order->update([
-            'order_status' => 'completed',
-            'completed_at' => now(),
-        ]);
-
-        return response()->json($order->fresh());
-    }
-
-    private function resolveSellerId(Product $product): ?int
-    {
-        if (!empty($product->seller_id)) {
-            return (int)$product->seller_id;
-        }
-
-        if (!empty($product->user_id)) {
-            return (int)$product->user_id;
-        }
-
-        if (!empty($product->shop_id)) {
-            $shop = Shop::find($product->shop_id);
-            if ($shop && !empty($shop->owner_id)) {
-                return (int)$shop->owner_id;
-            }
-            if ($shop && !empty($shop->user_id)) {
-                return (int)$shop->user_id;
-            }
-        }
-
-        return null;
-    }
+use App\Http\Controllers\Controller; use App\Models\SecondLifeOrder; use App\Services\Payments\DirectSbpOrderService; use Illuminate\Http\Request; use Illuminate\Support\Facades\Storage; use Marvel\Database\Models\Product;
+class OrderController extends Controller {
+ public function __construct(private DirectSbpOrderService $service){}
+ public function store(Request $r){$d=$r->validate(['product_id'=>['required','integer','exists:products,id']]);$o=$this->service->createOrder($r->user(),Product::findOrFail($d['product_id']));return response()->json(['order'=>$this->resource($o,$r)],201);}
+ public function paymentOptions(int $productId){$p=Product::with('shop.balance')->findOrFail($productId);$base=(float)($p->sale_price??$p->price??$p->min_price??0);$rate=max(0,(float)($p->shop?->balance?->admin_commission_rate??0));return ['direct_sbp'=>['price'=>$base,'commission_rate'=>0],'site_payment'=>['price'=>round($base*(1+$rate/100),2),'commission_rate'=>$rate]];}
+ public function show(Request $r,string $publicId){$o=$this->find($publicId);$this->access($r,$o);return ['order'=>$this->resource($o,$r)];}
+ public function markPaid(Request $r,string $publicId){$o=$this->find($publicId);$d=$r->validate(['comment'=>['nullable','string','max:2000'],'screenshot'=>['nullable','image','mimes:jpg,jpeg,png,webp','max:10240']]);if($r->hasFile('screenshot'))$d['screenshot_path']=$r->file('screenshot')->store('private/payment-proofs');$c=$this->service->markPaidByBuyer($o,$r->user(),$d);return ['status'=>'buyer_marked_paid','message'=>'Ожидаем подтверждения продавца','confirmation'=>$c];}
+ public function confirmPayment(Request $r,string $publicId){$o=$this->find($publicId);$this->service->confirmPaymentBySeller($o,$r->user());return ['status'=>'paid','payment_status'=>'seller_confirmed_paid'];}
+ public function rejectPayment(Request $r,string $publicId){$d=$r->validate(['reason'=>['required','string','max:2000']]);$o=$this->find($publicId);$this->service->rejectPaymentBySeller($o,$r->user(),$d['reason']);return $this->resource($o->fresh(),$r);}
+ public function cancel(Request $r,string $publicId){$o=$this->find($publicId);$this->service->cancel($o,$r->user());return $this->resource($o->fresh(),$r);}
+ public function openDispute(Request $r,string $publicId){$d=$r->validate(['reason'=>['required','string','max:2000']]);$o=$this->find($publicId);$this->service->openDispute($o,$r->user(),$d['reason']);return $this->resource($o->fresh(),$r);}
+ public function proof(Request $r,string $publicId,int $confirmation){$o=$this->find($publicId);$this->access($r,$o);$c=$o->confirmations()->findOrFail($confirmation);abort_unless($c->screenshot_path,404);return Storage::download($c->screenshot_path);}
+ public function qr(Request $r,string $publicId){$o=$this->find($publicId);$this->access($r,$o);abort_unless($o->paymentDetails?->uploaded_qr_path,404);return Storage::download($o->paymentDetails->uploaded_qr_path);}
+ private function find(string $id):SecondLifeOrder{return SecondLifeOrder::where('public_id',$id)->orWhere('id',$id)->with(['paymentDetails','confirmations','events','product','buyer','seller'])->firstOrFail();}
+ private function access(Request $r,SecondLifeOrder $o):void{abort_unless(in_array((int)$r->user()->id,[(int)$o->buyer_id,(int)$o->seller_id],true)||$r->user()->hasPermissionTo('super_admin'),403);}
+ private function resource(SecondLifeOrder $o,Request $r):array{$o->loadMissing(['paymentDetails','confirmations','events','product','buyer','seller']);$a=$o->toArray();if(!in_array((int)$r->user()->id,[(int)$o->buyer_id,(int)$o->seller_id],true))unset($a['payment_details']['phone']);return $a;}
 }

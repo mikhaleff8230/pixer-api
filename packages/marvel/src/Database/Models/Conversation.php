@@ -62,13 +62,16 @@ class Conversation extends Model
 
     public function getUnseenAttribute()
     {
-        $instance = $this->participants()->whereNull('last_read')->where('user_id', auth()->user()->id)->where('type', 'user')->count();
+        $userId = auth()->id();
 
-        if( 0 == $instance) {
-            $instance = $this->participants()->whereNull('last_read')->whereIn('shop_id', auth()->user()->shops()->pluck('id'))->where('type', 'shop')->count();
+        if (!$userId) {
+            return 0;
         }
 
-        return $instance;
+        return $this->messages()
+            ->where('user_id', '!=', $userId)
+            ->whereNull('read_at')
+            ->count();
     }
 
 }
