@@ -47,7 +47,7 @@ class ConversationController extends CoreController
         abort_unless($user->shop_id === $conversation->shop_id || in_array( $conversation->shop_id, $user->shops->pluck('id')->toArray()) || $user->id === $conversation->user_id, 404, 'Unauthorized');
 
         // If request is for chat API, also return messages
-        if (request()->is('api/chat/conversations/*')) {
+        if (request()->is('chat/conversations/*') || request()->is('api/chat/conversations/*')) {
             $messages = \Marvel\Database\Models\Message::where('conversation_id', $conversation_id)
                 ->with(['user', 'chatAttachments'])
                 ->orderBy('created_at', 'asc')
