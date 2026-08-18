@@ -217,7 +217,10 @@ class RedsmsGateway implements OtpInterface
 
             if (($otpData['channel'] ?? null) === 'wcall') {
                 $status = $this->getStatus((string) $id);
-                $current = $status['items'][0]['status'] ?? $status['status'] ?? null;
+                $current = $status['item']['status']
+                    ?? $status['items'][0]['status']
+                    ?? $status['status']
+                    ?? null;
                 if ($current === 'wcall_delivered') {
                     cache()->forget("redsms_otp_{$id}");
                     return new Result('success');

@@ -496,7 +496,7 @@ class UserController extends CoreController
             if (!$sendOtpCode->isValid()) {
                 return ['message' => OTP_SEND_FAIL, 'success' => false];
             }
-            $profile = Profile::where('contact', $phoneNumber)->first();
+            $profile = $this->findProfileByPhone($phoneNumber);
             return [
                 'message' => OTP_SEND_SUCCESSFUL,
                 'success' => true,
@@ -541,7 +541,7 @@ class UserController extends CoreController
         try {
             if ($this->verifyOtp($request)) {
                 // check if phone number exist
-                $profile = Profile::where('contact', $phoneNumber)->first();
+                $profile = $this->findProfileByPhone($phoneNumber);
                 $user = '';
                 if (!$profile) {
                     // profile not found so could be a new user
@@ -675,6 +675,25 @@ class UserController extends CoreController
         } catch (\Throwable $e) {
             return response()->json(['error' => INVALID_GATEWAY], 422);
         }
+    }
+
+    /**
+     * Find a profile regardless of how a Russian phone was stored
+     * (+7, 7, 8, spaces, brackets or dashes).
+     */
+    protected function findProfileByPhone(?string $phoneNumber)
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phoneNumber);
+        $national = substr($digits, -10);
+
+        if (strlen($national) !== 10) {
+            return null;
+        }
+
+        return Profile::whereRaw(
+            "RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), 10) = ?",
+            [$national]
+        )->first();
     }
 
     public function setPinCode(Request $request)
