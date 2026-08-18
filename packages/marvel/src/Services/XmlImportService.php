@@ -243,8 +243,13 @@ class XmlImportService
             if ($line === '') continue;
             $values = str_getcsv($line);
             if (count($values) !== count($headers)) {
-                // приведем к одной длине
-                $values = array_pad($values, count($headers), null);
+                // array_pad дополняет короткие строки, но не обрезает длинные.
+                // Нормализуем обе ситуации, чтобы array_combine не выбрасывал ValueError.
+                $values = array_slice(
+                    array_pad($values, count($headers), null),
+                    0,
+                    count($headers)
+                );
             }
             $rows[] = array_combine($headers, $values);
         }
@@ -1481,7 +1486,6 @@ class XmlImportService
         }
     }
 }
-
 
 
 

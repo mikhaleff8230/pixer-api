@@ -442,7 +442,12 @@ class ChunkedXmlImportJob implements ShouldQueue
             
             // Дополняем значения если нужно
             if (count($values) !== count($headers)) {
-                $values = array_pad($values, count($headers), null);
+                // array_pad не обрезает строки с лишними колонками.
+                $values = array_slice(
+                    array_pad($values, count($headers), null),
+                    0,
+                    count($headers)
+                );
             }
             
             $rows[] = array_combine($headers, $values);
@@ -1375,5 +1380,4 @@ class ChunkedXmlImportJob implements ShouldQueue
         throw new \Exception('No product types found to assign type_id');
     }
 }
-
 
