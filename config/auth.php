@@ -2,6 +2,8 @@
 
 return [
 
+    'active_otp_gateway' => env('ACTIVE_OTP_GATEWAY', 'redsms'),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Defaults

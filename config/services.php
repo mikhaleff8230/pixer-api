@@ -125,4 +125,12 @@ return [
         'redirect' => env('YANDEX_REDIRECT_URI', 'https://sancan.ru/auth/yandex/callback'),
     ],
 
+    'redsms' => [
+        'login' => env('REDSMS_LOGIN'),
+        'api_key' => env('REDSMS_API_KEY'),
+        'base_url' => env('REDSMS_BASE_URL', 'https://cp.redsms.ru/api'),
+        'sender' => env('REDSMS_SENDER'),
+        'sms_template' => env('REDSMS_SMS_TEMPLATE', 'Ваш код подтверждения: {code}'),
+    ],
+
 ];
