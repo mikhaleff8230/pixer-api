@@ -160,20 +160,13 @@ class XmlImportController extends CoreController
                 ], 422);
             }
 
-            if ($request->boolean('queue')) {
+            $productCount = $this->estimateProductCount($content, $ext);
+            $forceChunked = $productCount > 50;
+
+            if ($request->boolean('queue') || $forceChunked) {
                 \Illuminate\Support\Facades\Log::info('Import queued');
-                
-                // ПРОВЕРКА: Максимум 100 товаров за раз
-                $productCount = $this->estimateProductCount($content, $ext);
-                
-                if ($productCount > 100) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => "Файл содержит {$productCount} товаров. Максимум 100 товаров за раз. Разделите файл на части."
-                    ], 400);
-                }
-                
-                $useChunked = $request->boolean('chunked');
+
+                $useChunked = $request->boolean('chunked') || $forceChunked;
                 
                 \Illuminate\Support\Facades\Log::info('Calculated import params', [
                     'product_count' => $productCount,
@@ -706,8 +699,7 @@ class XmlImportController extends CoreController
     {
         try {
             if (in_array($ext, ['csv', 'txt'])) {
-                $lines = preg_split("/(\r\n|\n|\r)/", trim($content));
-                return max(0, count($lines) - 1); // Вычитаем заголовок
+                return $this->getChunkedImportService()->countProducts($content, $ext);
             } else {
                 // Для XML используем простую оценку по размеру
                 $sizeKB = strlen($content) / 1024;
@@ -718,5 +710,4 @@ class XmlImportController extends CoreController
         }
     }
 }
-
 

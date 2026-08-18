@@ -9,9 +9,9 @@ use Illuminate\Support\Str;
 
 class ChunkedImportService
 {
-    protected const DEFAULT_CHUNK_SIZE = 25; // Товаров на чанк (уменьшено для экономии памяти)
-    protected const MAX_CHUNK_SIZE = 50; // Максимальный размер чанка (уменьшено)
-    protected const MIN_CHUNK_SIZE = 10; // Минимальный размер чанка
+    protected const DEFAULT_CHUNK_SIZE = 10;
+    protected const MAX_CHUNK_SIZE = 10;
+    protected const MIN_CHUNK_SIZE = 5;
 
     /**
      * Запустить chunked импорт
@@ -69,7 +69,7 @@ class ChunkedImportService
                     $i,
                     $chunkSize,
                     $totalChunks
-                )->onQueue('default'); // Явно указываем очередь
+                )->onQueue('default')->delay(now()->addMinutes($i));
                 
                 Log::info("Dispatched chunk {$i}/{$totalChunks} for token {$token}");
             }
@@ -222,15 +222,7 @@ class ChunkedImportService
         $productCount = $this->countProducts($content, $ext);
         
         // Рассчитываем размер чанка на основе количества товаров (оптимизировано для памяти)
-        if ($productCount <= 100) {
-            return 10; // Маленькие файлы - маленькие чанки
-        } elseif ($productCount <= 500) {
-            return 25; // Средние файлы
-        } elseif ($productCount <= 1000) {
-            return 30; // Большие файлы
-        } else {
-            return 50; // Очень большие файлы (максимум)
-        }
+        return self::DEFAULT_CHUNK_SIZE;
     }
 
     /**
@@ -255,13 +247,7 @@ class ChunkedImportService
      */
     protected function countCsvProducts(string $content): int
     {
-        $lines = preg_split("/(\r\n|\n|\r)/", trim($content));
-        if (!$lines || count($lines) <= 1) {
-            return 0;
-        }
-        
-        // Вычитаем заголовок
-        return count($lines) - 1;
+        return count(CsvImportReader::parse($content));
     }
 
     /**
@@ -453,7 +439,6 @@ class ChunkedImportService
         }
     }
 }
-
 
 
 

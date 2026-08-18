@@ -233,27 +233,7 @@ class XmlImportService
 
     private function parseCsv(string $csvContent): array
     {
-        $lines = preg_split("/(\r\n|\n|\r)/", trim($csvContent));
-        if (!$lines || count($lines) === 0) {
-            return [];
-        }
-        $rows = [];
-        $headers = str_getcsv(array_shift($lines));
-        foreach ($lines as $line) {
-            if ($line === '') continue;
-            $values = str_getcsv($line);
-            if (count($values) !== count($headers)) {
-                // array_pad дополняет короткие строки, но не обрезает длинные.
-                // Нормализуем обе ситуации, чтобы array_combine не выбрасывал ValueError.
-                $values = array_slice(
-                    array_pad($values, count($headers), null),
-                    0,
-                    count($headers)
-                );
-            }
-            $rows[] = array_combine($headers, $values);
-        }
-        return $rows;
+        return CsvImportReader::parse($csvContent);
     }
 
     private function inferMappingFromHeaders(array $headers): array
@@ -294,6 +274,30 @@ class XmlImportService
                 $product[$dbField] = $row[$src];
             }
         }
+        return $this->normalizeCsvProduct($product, $row);
+    }
+
+    private function normalizeCsvProduct(array $product, array $row): array
+    {
+        // В WooCommerce поле «Описание» обычно содержит полное описание,
+        // а description — короткий анонс.
+        if (!empty($row['Описание'])) {
+            $product['description'] = $row['Описание'];
+        }
+
+        $media = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
+        if (is_string($media) && trim($media) !== '') {
+            $urls = preg_split('/\s*[,;|\r\n]+\s*(?=https?:\/\/)/i', trim($media)) ?: [];
+            $urls = array_values(array_unique(array_filter(array_map('trim', $urls))));
+            if ($urls) {
+                $product['image'] = $product['image'] ?? $urls[0];
+                $product['gallery'] = array_values(array_filter(
+                    $urls,
+                    static fn ($url) => $url !== $product['image']
+                ));
+            }
+        }
+
         return $product;
     }
 
@@ -1486,7 +1490,6 @@ class XmlImportService
         }
     }
 }
-
 
 
 

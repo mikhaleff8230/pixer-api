@@ -9,6 +9,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Marvel\Services\XmlImportService;
+use Marvel\Services\CsvImportReader;
 use Illuminate\Support\Facades\Storage;
 
 class ChunkedXmlImportJob implements ShouldQueue
@@ -406,55 +407,8 @@ class ChunkedXmlImportJob implements ShouldQueue
             return [];
         }
         
-        $handle = fopen($this->filePath, 'r');
-        if (!$handle) {
-            Log::error('Cannot open CSV file: ' . $this->filePath);
-            return [];
-        }
-        
-        // Читаем заголовок
-        $headers = fgetcsv($handle);
-        if (!$headers) {
-            fclose($handle);
-            return [];
-        }
-        
-        // Пропускаем строки до начала нашего чанка
-        $startRow = $this->chunkIndex * $this->chunkSize;
-        for ($i = 0; $i < $startRow; $i++) {
-            if (fgetcsv($handle) === false) {
-                fclose($handle);
-                return []; // Достигли конца файла
-            }
-        }
-        
-        // Читаем только строки нашего чанка
-        $rows = [];
-        for ($i = 0; $i < $this->chunkSize; $i++) {
-            $values = fgetcsv($handle);
-            if ($values === false) {
-                break; // Конец файла
-            }
-            
-            if (empty($values) || (count($values) === 1 && $values[0] === null)) {
-                continue; // Пропускаем пустые строки
-            }
-            
-            // Дополняем значения если нужно
-            if (count($values) !== count($headers)) {
-                // array_pad не обрезает строки с лишними колонками.
-                $values = array_slice(
-                    array_pad($values, count($headers), null),
-                    0,
-                    count($headers)
-                );
-            }
-            
-            $rows[] = array_combine($headers, $values);
-        }
-        
-        fclose($handle);
-        return $rows;
+        $rows = CsvImportReader::parse((string) file_get_contents($this->filePath));
+        return array_slice($rows, $this->chunkIndex * $this->chunkSize, $this->chunkSize);
     }
 
     protected function mapCsvRowToProduct(array $row, array $mapping): array
@@ -487,6 +441,19 @@ class ChunkedXmlImportJob implements ShouldQueue
             }
         }
         
+        $media = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
+        if (is_string($media) && trim($media) !== '') {
+            $urls = preg_split('/\s*[,;|\r\n]+\s*(?=https?:\/\/)/i', trim($media)) ?: [];
+            $urls = array_values(array_unique(array_filter(array_map('trim', $urls))));
+            if ($urls) {
+                $product['image'] = $product['image'] ?? $urls[0];
+                $product['gallery'] = array_values(array_filter($urls, static fn ($url) => $url !== $product['image']));
+            }
+        }
+        if (!empty($row['Описание'])) {
+            $product['description'] = $row['Описание'];
+        }
+
         return $product;
     }
 
@@ -1380,4 +1347,3 @@ class ChunkedXmlImportJob implements ShouldQueue
         throw new \Exception('No product types found to assign type_id');
     }
 }
-
