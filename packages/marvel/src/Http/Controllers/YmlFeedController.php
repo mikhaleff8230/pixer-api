@@ -2,6 +2,7 @@
 
 namespace Marvel\Http\Controllers;
 
+use App\Services\PublicStoreUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Response;
 use Marvel\Database\Models\Product;
@@ -9,6 +10,10 @@ use Marvel\Database\Models\Category;
 
 class YmlFeedController extends CoreController
 {
+    public function __construct(private readonly PublicStoreUrl $publicStoreUrl)
+    {
+    }
+
     public function index(Request $request, $page = null)
     {
         // Параметры постраничной загрузки
@@ -33,7 +38,7 @@ class YmlFeedController extends CoreController
         $shop = $xml->addChild('shop');
         $shop->addChild('name', 'SANCAN.ru');
         $shop->addChild('company', 'ООО "САНКЭН"');
-        $shop->addChild('url', config('app.url'));
+        $shop->addChild('url', $this->publicStoreUrl->baseUrl());
 
         // Валюта
         $currencies = $shop->addChild('currencies');
@@ -50,10 +55,6 @@ class YmlFeedController extends CoreController
                 $cat->addAttribute('parentId', $category->parent_id);
             }
         }
-
-        // Убираем /api из домена
-        $domain = rtrim(config('app.url'), '/');
-        $domain = str_replace('/api', '', $domain);
 
         // Офферы (товары)
         $offers = $shop->addChild('offers');
@@ -77,7 +78,7 @@ class YmlFeedController extends CoreController
             if (strpos($cleanSlug, '/ru/') === 0) {
                 $cleanSlug = substr($cleanSlug, 4);
             }
-            $offer->addChild('url', $domain . '/element/' . $cleanSlug . '-' . $product->id);
+            $offer->addChild('url', $this->publicStoreUrl->productUrl($cleanSlug, $product->id));
 
             // Цена: если есть sale_price, используем его как основную цену, иначе price
             $currentPrice = !empty($product->sale_price) && $product->sale_price > 0 

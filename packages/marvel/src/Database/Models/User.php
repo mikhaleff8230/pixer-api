@@ -2,6 +2,7 @@
 
 namespace Marvel\Database\Models;
 
+use App\Jobs\SyncSellerYandexBoostJob;
 use App\Enums\RoleType;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -54,6 +55,9 @@ class User extends Authenticatable implements MustVerifyEmail
         // Order by updated_at desc
         static::addGlobalScope('order', function (Builder $builder) {
             $builder->orderBy('updated_at', 'desc');
+        });
+        static::updated(function ($user) {
+            if ($user->wasChanged('is_active')) SyncSellerYandexBoostJob::dispatchAfterResponse((int) $user->id);
         });
     }
 

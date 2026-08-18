@@ -86,13 +86,12 @@ class RedsmsGateway implements OtpInterface
         $url = rtrim($this->baseUrl, '/') . '/' . ltrim($endpoint, '/');
         $authParams = $this->getAuthParams();
 
-        // Merge auth params with request data
-        $requestData = array_merge($authParams, $data);
-
         try {
             $response = Http::timeout(10)
                 ->retry(3, 1000)
-                ->{strtolower($method)}($url, $requestData);
+                ->acceptJson()
+                ->withHeaders($authParams)
+                ->{strtolower($method)}($url, $data);
 
             $responseData = $response->json();
 
@@ -141,28 +140,14 @@ class RedsmsGateway implements OtpInterface
     public function startVerification($phone_number)
     {
         try {
-            // Generate OTP code
-            $otpCode = $this->generateOtpCode(6);
-            
             // Format phone number (remove + if present, add 7 for Russian numbers if needed)
             $phone = $this->formatPhoneNumber($phone_number);
-            
-            // Create message text with OTP code using template
-            $messageText = str_replace('{code}', $otpCode, $this->smsTemplate);
-            
-            // Send SMS with OTP code
-            $data = [
-                'route' => 'sms',
-                'to' => $phone,
-                'text' => $messageText,
-            ];
 
-            // Отправитель обязателен для REDSMS
-            if (empty($this->sender)) {
-                throw new Exception('REDSMS sender is not configured. Please set REDSMS_SENDER in .env file');
-            }
-            
-            $data['from'] = $this->sender;
+            // Wait Call: пользователь сам звонит на номер из replacedFrom.
+            $data = [
+                'route' => 'wcall',
+                'to' => $phone,
+            ];
 
             $response = $this->sendRequest('POST', '/message', $data);
 
@@ -185,11 +170,18 @@ class RedsmsGateway implements OtpInterface
                 ]);
                 throw new Exception('UUID not received from REDSMS API response');
             }
+
+            $callTo = $response['items'][0]['replacedFrom'] ?? null;
+            if (!$callTo) {
+                throw new Exception('Wait Call number was not received from REDSMS API response');
+            }
             
-            // Store OTP code temporarily (expires in 5 minutes)
+            // Store verification context temporarily (expires in 5 minutes)
             cache()->put("redsms_otp_{$uuid}", [
-                'code' => $otpCode,
+                'code' => null,
                 'phone' => $phone,
+                'channel' => 'wcall',
+                'call_to' => $callTo,
                 'created_at' => now(),
             ], now()->addMinutes(5));
             
@@ -223,7 +215,17 @@ class RedsmsGateway implements OtpInterface
                 return new Result(['Verification check failed: OTP code expired or invalid.']);
             }
 
-            // Check if code matches
+            if (($otpData['channel'] ?? null) === 'wcall') {
+                $status = $this->getStatus((string) $id);
+                $current = $status['items'][0]['status'] ?? $status['status'] ?? null;
+                if ($current === 'wcall_delivered') {
+                    cache()->forget("redsms_otp_{$id}");
+                    return new Result('success');
+                }
+                return new Result(['Verification check failed: Waiting for customer call.']);
+            }
+
+            // Backward compatibility for already issued SMS OTPs.
             if ($otpData['code'] === $code && $otpData['phone'] === $this->formatPhoneNumber($phone_number)) {
                 // Remove OTP from cache after successful verification
                 cache()->forget("redsms_otp_{$id}");
@@ -324,6 +326,12 @@ class RedsmsGateway implements OtpInterface
             ]);
             return null;
         }
+    }
+
+    public function getVerificationData(string $uuid): ?array
+    {
+        $data = cache()->get("redsms_otp_{$uuid}");
+        return is_array($data) ? $data : null;
     }
 }
 

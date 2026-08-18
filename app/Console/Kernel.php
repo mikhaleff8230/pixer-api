@@ -29,6 +29,7 @@ class Kernel extends ConsoleKernel
         Commands\CheckSellerBalance::class,
         Commands\GenerateSitemap::class,
         Commands\CancelExpiredSecondLifeReservations::class,
+        Commands\SyncYandexDirectStats::class,
     ];
 
     /**
@@ -67,6 +68,10 @@ class Kernel extends ConsoleKernel
         // Генерация sitemap ежедневно в 3:00
         $schedule->command('sitemap:generate')->dailyAt('03:00');
         $schedule->command('orders:cancel-expired-reservations')->everyMinute()->withoutOverlapping();
+        $settings = \App\Models\YandexDirectSetting::query()->first();
+        if ($settings?->enabled) {
+            $schedule->command('yandex-direct:sync-stats')->everyFiveMinutes()->withoutOverlapping(20)->onOneServer();
+        }
     }
 
     /**

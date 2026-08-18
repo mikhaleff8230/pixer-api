@@ -22,6 +22,13 @@ class OtpGateway
 		return $this->gateway->startVerification($phone_number);
 	}
 
+	public function getVerificationData($id)
+	{
+		return method_exists($this->gateway, 'getVerificationData')
+			? $this->gateway->getVerificationData($id)
+			: null;
+	}
+
 	public function checkVerification($id, $code, $phone_number)
 	{
 		return $this->gateway->checkVerification($id, $code, $phone_number);

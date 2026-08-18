@@ -502,6 +502,8 @@ class UserController extends CoreController
                 'success' => true,
                 'provider' => config('auth.active_otp_gateway'),
                 'id' => $sendOtpCode->getId(),
+                'channel' => 'wcall',
+                'call_to' => optional($otpGateway->getVerificationData($sendOtpCode->getId()))['call_to'] ?? null,
                 'phone_number' => $phoneNumber,
                 'is_contact_exist' => $profile ? true : false
             ];

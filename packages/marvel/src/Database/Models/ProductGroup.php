@@ -2,6 +2,7 @@
 
 namespace Marvel\Database\Models;
 
+use App\Services\PublicStoreUrl;
 use Cviebrock\EloquentSluggable\Sluggable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -170,8 +171,7 @@ class ProductGroup extends Model
      */
     public function getFullUrlAttribute(): string
     {
-        $baseUrl = rtrim(config('app.url'), '/');
-        return "{$baseUrl}/element/{$this->slug}-{$this->id}";
+        return app(PublicStoreUrl::class)->productUrl($this->slug, $this->id);
     }
 
     /**

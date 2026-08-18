@@ -2,6 +2,7 @@
 
 namespace Marvel\Database\Models;
 
+use App\Services\PublicStoreUrl;
 use Cviebrock\EloquentSluggable\Sluggable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -208,9 +209,8 @@ class ProductSku extends Model
      */
     public function getFullUrlAttribute(): string
     {
-        $baseUrl = rtrim(config('app.url'), '/');
         $group = $this->group;
-        return "{$baseUrl}/element/{$group->slug}/{$this->slug}-{$this->id}";
+        return app(PublicStoreUrl::class)->to("/element/{$group->slug}/{$this->slug}-{$this->id}");
     }
 
     /**

@@ -11,6 +11,8 @@ use Marvel\Http\Controllers\OrderController;
 use Marvel\Http\Controllers\PlaceController;
 use Marvel\Http\Controllers\YmlFeedController;
 use Marvel\Enums\Permission;
+use App\Http\Controllers\Admin\ImpersonationController;
+use App\Http\Controllers\Admin\YandexDirectController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +28,9 @@ use Marvel\Enums\Permission;
 Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+Route::middleware(['auth:api', 'throttle:20,1'])
+    ->post('/admin/users/{user}/impersonate', [ImpersonationController::class, 'store']);
 
 // AntiBot API routes (только для админов) - ВРЕМЕННО ЗАКОММЕНТИРОВАНО (контроллер отсутствует на сервере)
 // Route::middleware('auth:api')->prefix('antibot')->group(function () {
@@ -82,6 +87,11 @@ Route::get('/csrf-token', function () {
 
 Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'index']);
 Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN])->prefix('admin')->group(function () {
+    Route::get('/yandex-direct', [YandexDirectController::class, 'show']);
+    Route::put('/yandex-direct', [YandexDirectController::class, 'update']);
+    Route::post('/yandex-direct/test', [YandexDirectController::class, 'test'])->middleware('throttle:10,1');
+    Route::get('/yandex-direct/errors', [YandexDirectController::class, 'errors']);
+    Route::post('/yandex-direct/groups/{group}/action', [YandexDirectController::class, 'groupAction']);
     Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'adminIndex']);
     Route::post('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'store']);
     Route::post('/homepage-banners/settings', [App\Http\Controllers\HomepageBannerController::class, 'updateSettings']);
@@ -1526,6 +1536,7 @@ Route::get('/geocoder/reverse', function (Request $request) {
 // YML Feed для Яндекс.Маркета
 Route::get('/yml-feed', [YmlFeedController::class, 'index']);
 Route::get('/yml-feed/{page?}', [YmlFeedController::class, 'index']);
+Route::post('/promotion/visit', [App\Http\Controllers\YandexBoostController::class, 'track'])->middleware('throttle:120,1');
 
 
 // Second Life Marketplace API routes
@@ -1536,6 +1547,8 @@ Route::get('/second-life/products/{productId}/payment-options', [App\Http\Contro
 Route::get('/second-life/products/{productId}/payment-options', [App\Http\Controllers\SecondLife\OrderController::class, 'paymentOptions']);
 
 Route::middleware('auth:api')->group(function () {
+    Route::put('/products/{product}/boost', [App\Http\Controllers\YandexBoostController::class, 'toggle'])->middleware('throttle:30,1');
+    Route::get('/seller/promotion', [App\Http\Controllers\YandexBoostController::class, 'dashboard']);
     Route::get('/seller/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'index']);
     Route::post('/seller/payment-profiles', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'store']);
     Route::get('/seller/payment-profiles/{id}', [App\Http\Controllers\SecondLife\PaymentProfileController::class, 'show']);

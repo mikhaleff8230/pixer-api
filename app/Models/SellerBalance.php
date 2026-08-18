@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\SyncSellerYandexBoostJob;
 use Illuminate\Database\Eloquent\Model;
 use Marvel\Database\Models\User;
 
@@ -37,7 +38,9 @@ class SellerBalance extends Model
     {
         $this->balance += $amount;
         $this->total_deposited += $amount;
-        return $this->save();
+        $saved = $this->save();
+        if ($saved) SyncSellerYandexBoostJob::dispatchAfterResponse((int) $this->seller_id, false);
+        return $saved;
     }
 
     /**

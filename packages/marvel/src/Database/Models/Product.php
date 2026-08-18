@@ -2,6 +2,8 @@
 
 namespace Marvel\Database\Models;
 
+use App\Services\PublicStoreUrl;
+use App\Jobs\SyncSellerYandexBoostJob;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Cviebrock\EloquentSluggable\Sluggable;
@@ -43,6 +45,9 @@ class Product extends Model
         'subscription_data' => 'array',
         'key_data' => 'array',
         'reserved_at' => 'datetime',
+        'boost_enabled' => 'boolean',
+        'boost_started_at' => 'datetime',
+        'boost_stopped_at' => 'datetime',
         'reserved_until' => 'datetime',
     ];
 
@@ -555,6 +560,8 @@ class Product extends Model
         // Очищаем изображения при удалении товара
         static::deleting(function ($product) {
             $product->deleteProductImages();
+            $sellerId = $product->shop?->owner_id;
+            if ($sellerId) SyncSellerYandexBoostJob::dispatchAfterResponse((int) $sellerId);
         });
 
         // Отслеживаем изменение slug ПЕРЕД сохранением
@@ -571,6 +578,10 @@ class Product extends Model
 
         // Сохраняем историю ПОСЛЕ успешного сохранения
         static::saved(function ($product) {
+            if ($product->wasChanged(['boost_enabled', 'status', 'is_active', 'in_stock', 'quantity'])) {
+                $sellerId = $product->shop?->owner_id;
+                if ($sellerId) SyncSellerYandexBoostJob::dispatchAfterResponse((int) $sellerId);
+            }
             // Проверяем, был ли сохранен старый slug
             if (isset($product->_old_slug_for_history) && !empty($product->_old_slug_for_history)) {
                 $oldSlug = $product->_old_slug_for_history;
@@ -704,11 +715,11 @@ class Product extends Model
      */
     public function getFullUrlAttribute(): string
     {
-        $baseUrl = rtrim(config('app.url'), '/');
         if (!$this->slug || !$this->id) {
-            return "{$baseUrl}/element/{$this->slug}";
+            return app(PublicStoreUrl::class)->baseUrl() . "/element/{$this->slug}";
         }
-        return "{$baseUrl}/element/{$this->slug}-{$this->id}";
+
+        return app(PublicStoreUrl::class)->productUrl($this->slug, $this->id);
     }
 
     /**
@@ -737,9 +748,8 @@ class Product extends Model
      */
     public function getCanonicalUrlAttribute(): string
     {
-        $baseUrl = rtrim(config('app.url', 'https://sancan.ru'), '/');
         $fullSlug = $this->full_slug;
-        return "{$baseUrl}/element/{$fullSlug}";
+        return app(PublicStoreUrl::class)->to("/element/{$fullSlug}");
     }
 
     /**
