@@ -29,7 +29,7 @@ Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::middleware(['auth:api', 'throttle:20,1'])
+Route::middleware(['auth:sanctum', 'throttle:20,1'])
     ->post('/admin/users/{user}/impersonate', [ImpersonationController::class, 'store']);
 
 // AntiBot API routes (только для админов) - ВРЕМЕННО ЗАКОММЕНТИРОВАНО (контроллер отсутствует на сервере)
