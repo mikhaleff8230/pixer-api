@@ -221,7 +221,11 @@ class RedsmsGateway implements OtpInterface
                     ?? $status['items'][0]['status']
                     ?? $status['status']
                     ?? null;
-                if ($current === 'wcall_delivered') {
+                if (in_array($current, ['wcall_delivered', 'delivered'], true)) {
+                    Log::info('REDSMS Wait Call confirmed', [
+                        'uuid' => (string) $id,
+                        'status' => $current,
+                    ]);
                     cache()->forget("redsms_otp_{$id}");
                     return new Result('success');
                 }

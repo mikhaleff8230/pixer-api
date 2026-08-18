@@ -490,13 +490,33 @@ class UserController extends CoreController
     public function sendOtpCode(Request $request)
     {
         $phoneNumber = $request->phone_number;
+        $profile = $this->findProfileByPhone($phoneNumber);
+        $mode = $request->input('mode');
+
+        if ($mode === 'register' && $profile) {
+            return [
+                'message' => 'Этот номер уже зарегистрирован. Перейдите на страницу входа.',
+                'error_code' => 'PHONE_EXISTS',
+                'success' => false,
+                'is_contact_exist' => true,
+            ];
+        }
+
+        if ($mode === 'login' && !$profile) {
+            return [
+                'message' => 'Аккаунт продавца с таким номером не найден. Зарегистрируйтесь или проверьте номер.',
+                'error_code' => 'PHONE_NOT_FOUND',
+                'success' => false,
+                'is_contact_exist' => false,
+            ];
+        }
+
         try {
             $otpGateway = $this->getOtpGateway();
             $sendOtpCode = $otpGateway->startVerification($phoneNumber);
             if (!$sendOtpCode->isValid()) {
                 return ['message' => OTP_SEND_FAIL, 'success' => false];
             }
-            $profile = $this->findProfileByPhone($phoneNumber);
             return [
                 'message' => OTP_SEND_SUCCESSFUL,
                 'success' => true,
@@ -673,6 +693,11 @@ class UserController extends CoreController
             }
             return ['message' => OTP_VERIFICATION_FAILED, 'success' => false];
         } catch (\Throwable $e) {
+            Log::error('OTP login failed after verification', [
+                'phone' => $phoneNumber,
+                'message' => $e->getMessage(),
+                'exception' => $e,
+            ]);
             return response()->json(['error' => INVALID_GATEWAY], 422);
         }
     }
