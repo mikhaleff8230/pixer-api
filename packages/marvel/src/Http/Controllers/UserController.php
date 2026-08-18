@@ -761,7 +761,7 @@ class UserController extends CoreController
             $pinCode = $request->pin_code;
 
             // Найти пользователя по телефону
-            $profile = Profile::where('contact', $phoneNumber)->first();
+            $profile = $this->findProfileByPhone($phoneNumber);
             if (!$profile || !$profile->pin_code) {
                 return response()->json(['message' => 'PIN-код не установлен', 'success' => false], 404);
             }
