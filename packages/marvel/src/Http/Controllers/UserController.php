@@ -203,6 +203,7 @@ class UserController extends CoreController
         if (!$user || !Hash::check($request->password, $user->password)) {
             return ["token" => null, "permissions" => []];
         }
+        $this->markUserLoggedIn($user);
         $email_verified = $user->hasVerifiedEmail();
         return ["token" => $user->createToken('auth_token')->plainTextToken, "permissions" => $user->getPermissionNames(), "email_verified" => $email_verified];
     }
@@ -248,6 +249,7 @@ class UserController extends CoreController
         if ($useMustVerifyEmail) {
             event(new Registered($user));
         }
+        $this->markUserLoggedIn($user);
         return ["token" => $user->createToken('auth_token')->plainTextToken, "permissions" => $user->getPermissionNames()];
     }
 
@@ -444,6 +446,7 @@ class UserController extends CoreController
                 $this->giveSignupPointsToCustomer($userCreated->id);
             }
 
+            $this->markUserLoggedIn($userCreated);
             return ["token" => $userCreated->createToken('auth_token')->plainTextToken, "permissions" => $userCreated->getPermissionNames()];
         } catch (\Exception $e) {
             throw new MarvelException(INVALID_CREDENTIALS);
@@ -686,6 +689,7 @@ class UserController extends CoreController
                     $user->markEmailAsVerified();
                 }
 
+                $this->markUserLoggedIn($user);
                 return [
                     "token" => $user->createToken('auth_token')->plainTextToken,
                     "permissions" => $user->getPermissionNames()
@@ -782,6 +786,7 @@ class UserController extends CoreController
                 $user->markEmailAsVerified();
             }
 
+            $this->markUserLoggedIn($user);
             return response()->json([
                 'token' => $user->createToken('auth_token')->plainTextToken,
                 'permissions' => $user->getPermissionNames(),
@@ -790,6 +795,11 @@ class UserController extends CoreController
         } catch (\Exception $e) {
             return response()->json(['message' => 'Ошибка проверки PIN-кода', 'success' => false], 500);
         }
+    }
+
+    protected function markUserLoggedIn(User $user): void
+    {
+        $user->forceFill(['last_login_at' => now()])->saveQuietly();
     }
 
     public function updateContact(Request $request)
