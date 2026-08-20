@@ -34,6 +34,7 @@ use Marvel\Events\OrderStatusChanged;
 use Marvel\Listeners\ManageProductInventory;
 use Marvel\Listeners\MessageParticipantNotification;
 use Marvel\Listeners\SendMessageNotification;
+use Marvel\Listeners\SendMessageWebPush;
 use Marvel\Events\StoreNoticeEvent;
 use Marvel\Events\PaymentFailed;
 use Marvel\Events\PaymentMethods;
@@ -96,7 +97,8 @@ class EventServiceProvider extends ServiceProvider
         ],
         MessageSent::class => [
             MessageParticipantNotification::class,
-            SendMessageNotification::class
+            SendMessageNotification::class,
+            SendMessageWebPush::class,
         ],
         PaymentSuccess::class => [
             SendPaymentSuccessNotification::class

@@ -13,6 +13,7 @@ use Marvel\Http\Controllers\YmlFeedController;
 use Marvel\Enums\Permission;
 use App\Http\Controllers\Admin\ImpersonationController;
 use App\Http\Controllers\Admin\YandexDirectController;
+use App\Http\Controllers\PushSubscriptionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,6 +32,13 @@ Route::middleware('auth:api')->get('/user', function (Request $request) {
 
 Route::middleware(['auth:sanctum', 'throttle:20,1'])
     ->post('/admin/users/{user}/impersonate', [ImpersonationController::class, 'store']);
+
+Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'publicKey']);
+Route::middleware('auth:sanctum')->prefix('push')->group(function () {
+    Route::post('/subscriptions', [PushSubscriptionController::class, 'store']);
+    Route::delete('/subscriptions', [PushSubscriptionController::class, 'destroy']);
+    Route::post('/test', [PushSubscriptionController::class, 'test']);
+});
 
 // AntiBot API routes (только для админов) - ВРЕМЕННО ЗАКОММЕНТИРОВАНО (контроллер отсутствует на сервере)
 // Route::middleware('auth:api')->prefix('antibot')->group(function () {
