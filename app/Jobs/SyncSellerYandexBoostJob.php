@@ -44,14 +44,14 @@ class SyncSellerYandexBoostJob implements ShouldQueue, ShouldBeUnique
 
             try {
                 if ($group->pause_reason === 'admin' || ($group->pause_reason === 'api_error' && !$this->allowApiErrorRecovery)) return;
-                if (!$seller || !$seller->is_active) { if($group->ad_group_id)$direct->pauseSellerAdGroup((int)$group->ad_group_id); $group->update(['status'=>'paused','pause_reason'=>'seller_blocked','last_sync_at'=>now()]); return; }
-                if (!$ids) { if($group->ad_group_id)$direct->pauseSellerAdGroup((int)$group->ad_group_id); $group->update(['status'=>'paused','pause_reason'=>'no_boost_products','boost_filter_hash'=>null,'last_sync_at'=>now(),'last_error'=>null]); return; }
-                if (DecimalMoney::cents((string)$balance->balance)<=DecimalMoney::cents((string)$settings->balance_reserve)) { if($group->ad_group_id)$direct->pauseSellerAdGroup((int)$group->ad_group_id); $group->update(['status'=>'paused','pause_reason'=>'insufficient_balance','last_sync_at'=>now()]); return; }
+                if (!$seller || !$seller->is_active) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'seller_blocked','last_sync_at'=>now()]); return; }
+                if (!$ids) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'no_boost_products','boost_filter_hash'=>null,'last_sync_at'=>now(),'last_error'=>null]); return; }
+                if (DecimalMoney::cents((string)$balance->balance)<=DecimalMoney::cents((string)$settings->balance_reserve)) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'insufficient_balance','last_sync_at'=>now()]); return; }
                 if (!$group->ad_group_id) $group->ad_group_id=$direct->createSellerAdGroup($this->sellerId);
                 if (!$group->shopping_ad_id) $group->shopping_ad_id=$direct->createShoppingAd((int)$group->ad_group_id,$ids);
                 $hash=hash('sha256',implode(',',$ids));
                 if($group->boost_filter_hash!==$hash)$direct->updateShoppingAdProducts((int)$group->shopping_ad_id,$ids);
-                if($group->status!=='active')$direct->resumeSellerAdGroup((int)$group->ad_group_id);
+                if($group->status!=='active')$direct->resumeShoppingAd((int)$group->shopping_ad_id);
                 $group->fill(['feed_id'=>$settings->feed_id,'status'=>'active','pause_reason'=>null,'boost_filter_hash'=>$hash,'last_sync_at'=>now(),'last_error'=>null])->save();
                 Product::whereIn('id',$ids)->update(['boost_status'=>'on','boost_last_error'=>null]);
             } catch (\Throwable $e) {

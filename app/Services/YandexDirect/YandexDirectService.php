@@ -62,8 +62,8 @@ class YandexDirectService
         $this->call('ads', 'update', ['Ads' => [['Id' => $adId, 'ShoppingAd' => ['FeedFilterConditions' => ['Items' => $this->buildFeedFilter($productIds)], 'DefaultTexts' => ['Товары на SANCAN']]]]]);
     }
 
-    public function pauseSellerAdGroup(int $adGroupId): void { $this->call('adgroups', 'suspend', ['SelectionCriteria' => ['Ids' => [$adGroupId]]]); }
-    public function resumeSellerAdGroup(int $adGroupId): void { $this->call('adgroups', 'resume', ['SelectionCriteria' => ['Ids' => [$adGroupId]]]); }
+    public function pauseShoppingAd(int $adId): void { $this->call('ads', 'suspend', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
+    public function resumeShoppingAd(int $adId): void { $this->call('ads', 'resume', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
 
     public function getGroupStats(array $adGroupIds, string $dateFrom, string $dateTo): array
     {

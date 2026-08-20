@@ -54,7 +54,7 @@ class YandexDirectController extends Controller
     public function groupAction(Request $request, SellerYandexAdGroup $group)
     {
         $data=$request->validate(['action'=>'required|in:pause,resume']);
-        if($data['action']==='pause'){if($group->ad_group_id)(new YandexDirectService)->pauseSellerAdGroup((int)$group->ad_group_id);$group->update(['status'=>'paused','pause_reason'=>'admin']);}
+        if($data['action']==='pause'){if($group->shopping_ad_id)(new YandexDirectService)->pauseShoppingAd((int)$group->shopping_ad_id);$group->update(['status'=>'paused','pause_reason'=>'admin']);}
         else{$group->update(['status'=>'pending','pause_reason'=>null]);SyncSellerYandexBoostJob::dispatch($group->seller_id);}
         return ['success'=>true,'group'=>$group->fresh()];
     }

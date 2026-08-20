@@ -18,7 +18,7 @@ class PauseAllYandexBoostJob implements ShouldQueue
     public int $tries=3; public array $backoff=[30,120,600];
     public function handle(YandexDirectService $direct):void
     {
-        SellerYandexAdGroup::whereNotNull('ad_group_id')->where('status','!=','paused')->orderBy('id')->chunkById(100,function($groups)use($direct){foreach($groups as $group){try{$direct->pauseSellerAdGroup((int)$group->ad_group_id);$group->update(['status'=>'paused','pause_reason'=>'admin','last_sync_at'=>now()]);}catch(\Throwable $e){YandexDirectErrorLog::create(['seller_id'=>$group->seller_id,'operation'=>'pause_integration','error_code'=>(string)$e->getCode(),'error_message'=>$e->getMessage(),'context'=>['group_id'=>$group->id]]);}}});
+        SellerYandexAdGroup::whereNotNull('shopping_ad_id')->where('status','!=','paused')->orderBy('id')->chunkById(100,function($groups)use($direct){foreach($groups as $group){try{$direct->pauseShoppingAd((int)$group->shopping_ad_id);$group->update(['status'=>'paused','pause_reason'=>'admin','last_sync_at'=>now()]);}catch(\Throwable $e){YandexDirectErrorLog::create(['seller_id'=>$group->seller_id,'operation'=>'pause_integration','error_code'=>(string)$e->getCode(),'error_message'=>$e->getMessage(),'context'=>['group_id'=>$group->id]]);}}});
         Product::where('boost_enabled',true)->update(['boost_status'=>'off']);
     }
 }
