@@ -61,7 +61,9 @@ class UserCreateRequest extends FormRequest
             'password.required'  => 'password is required',
             'password.string'    => 'password is not a valid string',
             'accept_terms.accepted' => 'Необходимо принять пользовательское соглашение и публичную оферту',
+            'accept_terms.required' => 'Необходимо принять пользовательское соглашение и публичную оферту',
             'accept_privacy.accepted' => 'Необходимо дать согласие на обработку персональных данных',
+            'accept_privacy.required' => 'Необходимо дать согласие на обработку персональных данных',
             'address.array'      => 'address is not a valid json',
             'profile.array'      => 'profile is not a valid json',
         ];
