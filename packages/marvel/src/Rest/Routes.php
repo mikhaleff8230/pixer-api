@@ -919,6 +919,8 @@ Route::group(['middleware' => ['permission:' . Permission::SUPER_ADMIN, 'auth:ap
         Route::middleware(['auth:api', 'role:super_admin'])->group(function () {
             Route::post('/test-configuration', [EmailController::class, 'testEmailConfiguration']);
             Route::post('/bulk', [EmailController::class, 'sendBulkEmail']);
+            Route::get('/manual-templates', [EmailController::class, 'manualTemplates']);
+            Route::post('/users/{userId}/send-template', [EmailController::class, 'sendManualTemplate']);
             Route::post('/commission-rate-update', [EmailController::class, 'sendCommissionRateUpdate']);
             
             // Order notifications

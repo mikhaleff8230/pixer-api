@@ -14,6 +14,7 @@ use Marvel\Mail\ContactAdmin;
 use Marvel\Mail\ForgetPassword;
 use Marvel\Mail\AdminCommissionRateUpdate;
 use Marvel\Mail\VendorCommissionRateUpdate;
+use Marvel\Mail\SellerCreateShopReminder;
 use Marvel\Notifications\NewOrderReceived;
 use Marvel\Notifications\OrderPlacedSuccessfully;
 use Marvel\Notifications\OrderCancelledNotification;
@@ -30,14 +31,58 @@ use Marvel\Notifications\RefundUpdate;
 use Marvel\Notifications\StoreNoticeNotification;
 use Marvel\Services\EmailService;
 use Marvel\Exceptions\MarvelException;
+use Illuminate\Support\Facades\Log;
 
 class EmailController extends CoreController
 {
+    private const MANUAL_TEMPLATES = [
+        'seller_create_shop' => ['key' => 'seller_create_shop', 'title' => 'Призыв создать магазин', 'description' => 'Письмо продавцу, который ещё не создал магазин'],
+    ];
     protected $emailService;
 
     public function __construct(EmailService $emailService)
     {
         $this->emailService = $emailService;
+    }
+
+    public function manualTemplates(): JsonResponse
+    {
+        return response()->json(['data' => array_values(self::MANUAL_TEMPLATES)]);
+    }
+
+    public function sendManualTemplate(Request $request, int $userId): JsonResponse
+    {
+        $request->validate(['template' => 'required|string|in:' . implode(',', array_keys(self::MANUAL_TEMPLATES))]);
+        $user = User::withCount('shops')->findOrFail($userId);
+
+        if (!$user->email || !filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['message' => 'У пользователя не указана корректная электронная почта.'], 422);
+        }
+
+        if ($request->template === 'seller_create_shop') {
+            if (!$user->permissions()->where('name', 'store_owner')->exists()) {
+                return response()->json(['message' => 'Это письмо доступно только для продавцов.'], 422);
+            }
+            if ($user->shops_count > 0) {
+                return response()->json(['message' => 'У продавца уже есть магазин — письмо не отправлено.'], 422);
+            }
+            try {
+                Mail::to($user->email)->send(new SellerCreateShopReminder($user));
+            } catch (\Throwable $exception) {
+                Log::error('Manual marketing email failed', [
+                    'template' => $request->template,
+                    'recipient_user_id' => $user->id,
+                    'recipient_email' => $user->email,
+                    'error' => $exception->getMessage(),
+                ]);
+                return response()->json([
+                    'message' => 'Почтовый сервер сейчас недоступен. Письмо не отправлено.',
+                ], 502);
+            }
+        }
+
+        Log::info('Manual marketing email sent', ['template' => $request->template, 'recipient_user_id' => $user->id, 'recipient_email' => $user->email, 'admin_user_id' => optional($request->user())->id]);
+        return response()->json(['success' => true, 'message' => 'Письмо отправлено на ' . $user->email]);
     }
 
     /**
