@@ -35,6 +35,7 @@ use Marvel\Mail\ContactAdmin;
 use Marvel\Otp\Gateways\OtpGateway;
 use Marvel\Traits\WalletsTrait;
 use Marvel\Services\ArticleGeneratorService;
+use Marvel\Events\UserRegistered;
 use Spatie\Newsletter\Facades\Newsletter;
 
 class UserController extends CoreController
@@ -231,6 +232,7 @@ class UserController extends CoreController
             'name'     => $request->name,
             'email'    => $request->email,
             'password' => Hash::make($request->password),
+            ...$this->registrationConsentData($request),
         ]);
 
         $user->givePermissionTo($permissions);
@@ -244,6 +246,7 @@ class UserController extends CoreController
         }
         
         $this->giveSignupPointsToCustomer($user->id);
+        event(new UserRegistered($user, in_array(Permission::STORE_OWNER, $permissions) ? Permission::STORE_OWNER : Permission::CUSTOMER));
         $setting = Settings::first();
         $useMustVerifyEmail = isset($setting->options['useMustVerifyEmail']) ? $setting->options['useMustVerifyEmail'] : false;
         if ($useMustVerifyEmail) {
@@ -567,6 +570,15 @@ class UserController extends CoreController
                 $profile = $this->findProfileByPhone($phoneNumber);
                 $user = '';
                 if (!$profile) {
+                    $request->validate([
+                        'accept_terms' => ['required', 'accepted'],
+                        'accept_privacy' => ['required', 'accepted'],
+                        'marketing_email_consent' => ['sometimes', 'boolean'],
+                        'marketing_push_consent' => ['sometimes', 'boolean'],
+                    ], [
+                        'accept_terms.accepted' => 'Необходимо принять пользовательское соглашение и публичную оферту',
+                        'accept_privacy.accepted' => 'Необходимо дать согласие на обработку персональных данных',
+                    ]);
                     // profile not found so could be a new user
                     $name = $request->name;
                     $email = $request->email;
@@ -576,7 +588,11 @@ class UserController extends CoreController
                             'email'     => $email
                         ], [
                             'name'    => $name,
+                            ...$this->registrationConsentData($request),
                         ]);
+                        if ($userExist && (!$user->terms_accepted_at || !$user->privacy_consent_accepted_at)) {
+                            $user->update($this->registrationConsentData($request));
+                        }
                         
                         // Определяем права доступа - точно так же, как в методе register()
                         $notAllowedPermissions = [Permission::SUPER_ADMIN];
@@ -641,6 +657,7 @@ class UserController extends CoreController
                         }
                         if (empty($userExist)) {
                             $this->giveSignupPointsToCustomer($user->id);
+                            event(new UserRegistered($user, $request->permission === Permission::STORE_OWNER ? Permission::STORE_OWNER : Permission::CUSTOMER));
                         }
                     } else {
                         return ['message' => REQUIRED_INFO_MISSING, 'success' => false];
@@ -696,6 +713,8 @@ class UserController extends CoreController
                 ];
             }
             return ['message' => OTP_VERIFICATION_FAILED, 'success' => false];
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
             Log::error('OTP login failed after verification', [
                 'phone' => $phoneNumber,
@@ -704,6 +723,20 @@ class UserController extends CoreController
             ]);
             return response()->json(['error' => INVALID_GATEWAY], 422);
         }
+    }
+
+    private function registrationConsentData(Request $request): array
+    {
+        $now = now();
+        return [
+            'terms_accepted_at' => $now,
+            'privacy_consent_accepted_at' => $now,
+            'marketing_email_consent_at' => $request->boolean('marketing_email_consent') ? $now : null,
+            'marketing_push_consent_at' => $request->boolean('marketing_push_consent') ? $now : null,
+            'consent_version' => '2026-08-20',
+            'consent_ip' => $request->ip(),
+            'consent_user_agent' => mb_substr((string) $request->userAgent(), 0, 1000),
+        ];
     }
 
     /**

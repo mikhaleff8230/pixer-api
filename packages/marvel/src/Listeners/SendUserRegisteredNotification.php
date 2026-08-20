@@ -26,7 +26,9 @@ class SendUserRegisteredNotification implements ShouldQueue
         }
         
         // Отправка уведомления пользователю
-        $user->notify(new UserRegisteredNotification($user, 'customer'));
+        if (filter_var($user->email, FILTER_VALIDATE_EMAIL) && !str_ends_with($user->email, '@phone.auth')) {
+            $user->notify(new UserRegisteredNotification($user, 'customer'));
+        }
     }
     
     /**

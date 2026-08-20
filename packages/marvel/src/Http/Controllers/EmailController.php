@@ -66,6 +66,9 @@ class EmailController extends CoreController
             if ($user->shops_count > 0) {
                 return response()->json(['message' => 'У продавца уже есть магазин — письмо не отправлено.'], 422);
             }
+            if (!$user->marketing_email_consent_at) {
+                return response()->json(['message' => 'Пользователь не давал согласие на рекламные email-рассылки.'], 422);
+            }
             try {
                 Mail::to($user->email)->send(new SellerCreateShopReminder($user));
             } catch (\Throwable $exception) {
