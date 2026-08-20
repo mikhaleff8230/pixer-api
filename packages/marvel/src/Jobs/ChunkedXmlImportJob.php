@@ -441,15 +441,8 @@ class ChunkedXmlImportJob implements ShouldQueue
             }
         }
         
-        $media = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
-        if (is_string($media) && trim($media) !== '') {
-            $urls = preg_split('/\s*[,;|\r\n]+\s*(?=https?:\/\/)/i', trim($media)) ?: [];
-            $urls = array_values(array_unique(array_filter(array_map('trim', $urls))));
-            if ($urls) {
-                $product['image'] = $product['image'] ?? $urls[0];
-                $product['gallery'] = array_values(array_filter($urls, static fn ($url) => $url !== $product['image']));
-            }
-        }
+        $product['gallery'] = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
+        $product = CsvImportReader::promoteFirstGalleryImage($product);
         if (!empty($row['Описание'])) {
             $product['description'] = $row['Описание'];
         }

@@ -21,6 +21,67 @@ final class CsvImportReader
         return self::combineRows($records, $delimiter);
     }
 
+    public static function promoteFirstGalleryImage(array $product): array
+    {
+        $gallery = self::normalizeMediaList($product['gallery'] ?? null);
+        $image = trim((string) ($product['image'] ?? ''));
+
+        if ($image === '' && $gallery) {
+            $image = array_shift($gallery);
+            $product['image'] = $image;
+        }
+
+        if ($image !== '') {
+            $gallery = array_values(array_filter($gallery, static fn ($url) => $url !== $image));
+        }
+
+        $product['gallery'] = $gallery;
+        return $product;
+    }
+
+    private static function normalizeMediaList($media): array
+    {
+        if (is_string($media)) {
+            $media = trim($media);
+            if ($media === '') {
+                return [];
+            }
+
+            $decoded = json_decode($media, true);
+            if (is_array($decoded)) {
+                $media = $decoded;
+            } else {
+                // Поддерживаем основные разделители экспортов CSV. Lookahead
+                // сохраняет запятые внутри URL и подписей, если следующий
+                // элемент не похож на ссылку или путь к изображению.
+                $media = preg_split(
+                    '/\s*(?:[;|\r\n]+|,(?=\s*(?:https?:\/\/|\/|[A-Za-z0-9_.-]+\.(?:jpe?g|png|webp|gif|avif))))\s*/i',
+                    $media
+                ) ?: [];
+            }
+        }
+
+        if (!is_array($media)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($media as $item) {
+            if (is_array($item)) {
+                $item = $item['original'] ?? $item['url'] ?? $item['thumbnail'] ?? null;
+            }
+            if (!is_scalar($item)) {
+                continue;
+            }
+            $url = trim((string) $item);
+            if ($url !== '') {
+                $urls[] = $url;
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
     private static function normalizeEncoding(string $content): string
     {
         $content = preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content;

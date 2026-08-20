@@ -33,4 +33,43 @@ CSV;
         self::assertCount(1, $rows);
         self::assertSame("Первая строка\nВторая строка", $rows[0]['description']);
     }
+
+    public function test_it_promotes_first_delimited_gallery_image(): void
+    {
+        $product = CsvImportReader::promoteFirstGalleryImage([
+            'gallery' => "https://example.com/1.jpg; https://example.com/2.jpg|\nhttps://example.com/3.jpg",
+        ]);
+
+        self::assertSame('https://example.com/1.jpg', $product['image']);
+        self::assertSame([
+            'https://example.com/2.jpg',
+            'https://example.com/3.jpg',
+        ], $product['gallery']);
+    }
+
+    public function test_it_promotes_first_image_from_json_or_array_gallery(): void
+    {
+        $fromJson = CsvImportReader::promoteFirstGalleryImage([
+            'gallery' => '["https://example.com/a.jpg","https://example.com/b.jpg"]',
+        ]);
+        $fromArray = CsvImportReader::promoteFirstGalleryImage([
+            'gallery' => ['https://example.com/c.jpg', 'https://example.com/d.jpg'],
+        ]);
+
+        self::assertSame('https://example.com/a.jpg', $fromJson['image']);
+        self::assertSame(['https://example.com/b.jpg'], $fromJson['gallery']);
+        self::assertSame('https://example.com/c.jpg', $fromArray['image']);
+        self::assertSame(['https://example.com/d.jpg'], $fromArray['gallery']);
+    }
+
+    public function test_it_preserves_existing_main_image_without_gallery_duplicate(): void
+    {
+        $product = CsvImportReader::promoteFirstGalleryImage([
+            'image' => 'https://example.com/main.jpg',
+            'gallery' => 'https://example.com/main.jpg, https://example.com/other.jpg',
+        ]);
+
+        self::assertSame('https://example.com/main.jpg', $product['image']);
+        self::assertSame(['https://example.com/other.jpg'], $product['gallery']);
+    }
 }

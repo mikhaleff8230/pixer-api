@@ -285,20 +285,8 @@ class XmlImportService
             $product['description'] = $row['Описание'];
         }
 
-        $media = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
-        if (is_string($media) && trim($media) !== '') {
-            $urls = preg_split('/\s*[,;|\r\n]+\s*(?=https?:\/\/)/i', trim($media)) ?: [];
-            $urls = array_values(array_unique(array_filter(array_map('trim', $urls))));
-            if ($urls) {
-                $product['image'] = $product['image'] ?? $urls[0];
-                $product['gallery'] = array_values(array_filter(
-                    $urls,
-                    static fn ($url) => $url !== $product['image']
-                ));
-            }
-        }
-
-        return $product;
+        $product['gallery'] = $product['gallery'] ?? $row['images'] ?? $row['Images'] ?? null;
+        return CsvImportReader::promoteFirstGalleryImage($product);
     }
 
     /**
@@ -1490,7 +1478,6 @@ class XmlImportService
         }
     }
 }
-
 
 
 
