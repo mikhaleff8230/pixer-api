@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Marvel\Jobs\XmlImportJob;
+use Marvel\Database\Models\Shop;
 
 class XmlImportController extends CoreController
 {
@@ -128,6 +129,15 @@ class XmlImportController extends CoreController
                     'message' => 'shop_id is required and must be a number. Please select a shop.',
                     'errors' => ['shop_id' => ['Shop ID is required']]
                 ], 422);
+            }
+
+            $user = $request->user();
+            $shop = Shop::query()->find((int) $options['shop_id']);
+            if (!$shop) {
+                return response()->json(['success' => false, 'message' => 'Магазин не найден.'], 404);
+            }
+            if (!$user->hasPermissionTo('super_admin') && (int) $shop->owner_id !== (int) $user->id) {
+                return response()->json(['success' => false, 'message' => 'Можно импортировать товары только в собственный магазин.'], 403);
             }
 
             // Базовая проверка расширения
@@ -360,6 +370,7 @@ class XmlImportController extends CoreController
             }
             $list[] = [
                 'id' => count($list) + 1,
+                'user_id' => (int) $request->user()->id,
                 'mapping_name' => $request->input('mapping_name'),
                 'field_mapping' => $request->input('field_mapping'),
                 'attribute_mapping' => $request->input('attribute_mapping', []),
@@ -383,13 +394,17 @@ class XmlImportController extends CoreController
     /**
      * Получить сохраненные настройки маппинга
      */
-    public function getSavedMappings(): JsonResponse
+    public function getSavedMappings(Request $request): JsonResponse
     {
         $path = storage_path('app/xml-mappings.json');
         $list = [];
         if (file_exists($path)) {
             $json = file_get_contents($path);
             $list = json_decode($json, true) ?: [];
+        }
+        if (!$request->user()->hasPermissionTo('super_admin')) {
+            $userId = (int) $request->user()->id;
+            $list = array_values(array_filter($list, static fn ($item) => (int) ($item['user_id'] ?? 0) === $userId));
         }
         return response()->json([
             'success' => true,
@@ -400,7 +415,7 @@ class XmlImportController extends CoreController
     /**
      * Удалить настройки маппинга
      */
-    public function deleteMapping($id): JsonResponse
+    public function deleteMapping(Request $request, $id): JsonResponse
     {
         try {
             $path = storage_path('app/xml-mappings.json');
@@ -410,8 +425,11 @@ class XmlImportController extends CoreController
                 $list = json_decode($json, true) ?: [];
             }
             $idNum = (int) $id;
-            $list = array_values(array_filter($list, function ($item) use ($idNum) {
-                return (int)($item['id'] ?? 0) !== $idNum;
+            $isSuperAdmin = $request->user()->hasPermissionTo('super_admin');
+            $userId = (int) $request->user()->id;
+            $list = array_values(array_filter($list, function ($item) use ($idNum, $isSuperAdmin, $userId) {
+                if ((int) ($item['id'] ?? 0) !== $idNum) return true;
+                return !$isSuperAdmin && (int) ($item['user_id'] ?? 0) !== $userId;
             }));
             file_put_contents($path, json_encode($list));
 
@@ -710,4 +728,3 @@ class XmlImportController extends CoreController
         }
     }
 }
-

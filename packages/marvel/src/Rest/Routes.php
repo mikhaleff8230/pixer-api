@@ -750,6 +750,24 @@ Route::group(
     }
 );
 
+// XML/CSV import is available to super admins and store owners. Ownership of
+// the selected shop is additionally verified by XmlImportController.
+Route::group(['middleware' => ['permission:' . Permission::SUPER_ADMIN . '|' . Permission::STORE_OWNER, 'auth:api', 'email.verified']], function () {
+    Route::prefix('xml-import')->group(function () {
+        Route::get('/fields', [XmlImportController::class, 'getAvailableFields']);
+        Route::get('/stats', [XmlImportController::class, 'getStats']);
+        Route::post('/preview', [XmlImportController::class, 'preview']);
+        Route::post('/import', [XmlImportController::class, 'import']);
+        Route::get('/progress', [XmlImportController::class, 'getImportProgress']);
+        Route::get('/import-stats', [XmlImportController::class, 'getImportStats']);
+        Route::get('/active-imports', [XmlImportController::class, 'getActiveImports']);
+        Route::post('/cleanup', [XmlImportController::class, 'cleanupImport']);
+        Route::get('/mappings', [XmlImportController::class, 'getSavedMappings']);
+        Route::post('/mappings', [XmlImportController::class, 'saveFieldMapping']);
+        Route::delete('/mappings/{id}', [XmlImportController::class, 'deleteMapping']);
+    });
+});
+
 /**
  * *****************************************
  * Authorized Route for Super Admin only
@@ -867,25 +885,6 @@ Route::group(['middleware' => ['permission:' . Permission::SUPER_ADMIN, 'auth:ap
         
         // Reports
         Route::get('/reports', [AdminBillingReportsController::class, 'index']);
-    });
-
-    // XML/CSV Import routes (SUPER ADMIN ONLY - секретная страница)
-    Route::prefix('xml-import')->group(function () {
-        Route::get('/fields', [XmlImportController::class, 'getAvailableFields']);
-        Route::get('/stats', [XmlImportController::class, 'getStats']);
-        Route::post('/preview', [XmlImportController::class, 'preview']);
-        Route::post('/import', [XmlImportController::class, 'import']);
-        
-        // Chunked import routes
-        Route::get('/progress', [XmlImportController::class, 'getImportProgress']);
-        Route::get('/import-stats', [XmlImportController::class, 'getImportStats']);
-        Route::get('/active-imports', [XmlImportController::class, 'getActiveImports']);
-        Route::post('/cleanup', [XmlImportController::class, 'cleanupImport']);
-        
-        // Field mapping routes
-        Route::get('/mappings', [XmlImportController::class, 'getSavedMappings']);
-        Route::post('/mappings', [XmlImportController::class, 'saveFieldMapping']);
-        Route::delete('/mappings/{id}', [XmlImportController::class, 'deleteMapping']);
     });
 
     // Route for serving product-parser images
