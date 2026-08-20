@@ -9,9 +9,14 @@ use RuntimeException;
 
 class YandexDirectService
 {
-    public function __construct(private ?YandexDirectSetting $settings = null)
+    private YandexDirectSetting $settings;
+
+    public function __construct(?YandexDirectSetting $settings = null)
     {
-        $this->settings ??= YandexDirectSetting::current();
+        // Контейнер Laravel может автоматически создать пустую модель для
+        // nullable-зависимости. Используем её только если она реально
+        // загружена из БД, иначе берём сохранённые настройки интеграции.
+        $this->settings = $settings?->exists ? $settings : YandexDirectSetting::current();
     }
 
     public function testConnection(): array
