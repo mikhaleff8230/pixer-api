@@ -24,14 +24,22 @@ final class CsvImportReader
     public static function promoteFirstGalleryImage(array $product): array
     {
         $gallery = self::normalizeMediaList($product['gallery'] ?? null);
-        $image = trim((string) ($product['image'] ?? ''));
+        $imageList = self::normalizeMediaList($product['image'] ?? null);
+        $image = array_shift($imageList) ?? '';
+
+        // Некоторые сохранённые маппинги направляют WooCommerce `images`
+        // сразу в `image`. В таком случае первое фото является главным,
+        // а хвост той же строки должен попасть в галерею.
+        if ($imageList) {
+            $gallery = array_values(array_unique(array_merge($imageList, $gallery)));
+        }
 
         if ($image === '' && $gallery) {
             $image = array_shift($gallery);
-            $product['image'] = $image;
         }
 
         if ($image !== '') {
+            $product['image'] = $image;
             $gallery = array_values(array_filter($gallery, static fn ($url) => $url !== $image));
         }
 

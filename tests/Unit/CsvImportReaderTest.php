@@ -72,4 +72,17 @@ CSV;
         self::assertSame('https://example.com/main.jpg', $product['image']);
         self::assertSame(['https://example.com/other.jpg'], $product['gallery']);
     }
+
+    public function test_it_splits_a_delimited_list_mapped_directly_to_image(): void
+    {
+        $product = CsvImportReader::promoteFirstGalleryImage([
+            'image' => 'https://example.com/first.jpg, https://example.com/second.jpg; https://example.com/third.jpg',
+        ]);
+
+        self::assertSame('https://example.com/first.jpg', $product['image']);
+        self::assertSame([
+            'https://example.com/second.jpg',
+            'https://example.com/third.jpg',
+        ], $product['gallery']);
+    }
 }
