@@ -57,7 +57,9 @@ class YandexDirectService
     public function updateShoppingAdProducts(int $adId, array $productIds): void
     {
         if (!$productIds) throw new RuntimeException('Пустой фильтр запрещён: сначала остановите группу.');
-        $this->call('ads', 'update', ['Ads' => [['Id' => $adId, 'ShoppingAd' => ['FeedFilterConditions' => $this->buildFeedFilter($productIds), 'DefaultTexts' => ['Товары на SANCAN']]]]]);
+        // В ads.add FeedFilterConditions передаётся массивом, а ads.update
+        // ожидает update-обёртку с полем Items.
+        $this->call('ads', 'update', ['Ads' => [['Id' => $adId, 'ShoppingAd' => ['FeedFilterConditions' => ['Items' => $this->buildFeedFilter($productIds)], 'DefaultTexts' => ['Товары на SANCAN']]]]]);
     }
 
     public function pauseSellerAdGroup(int $adGroupId): void { $this->call('adgroups', 'suspend', ['SelectionCriteria' => ['Ids' => [$adGroupId]]]); }
