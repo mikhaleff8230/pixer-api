@@ -51,6 +51,7 @@ class SyncSellerYandexBoostJob implements ShouldQueue, ShouldBeUnique
                 if (!$group->shopping_ad_id) $group->shopping_ad_id=$direct->createShoppingAd((int)$group->ad_group_id,$ids);
                 $hash=hash('sha256',implode(',',$ids));
                 if($group->boost_filter_hash!==$hash)$direct->updateShoppingAdProducts((int)$group->shopping_ad_id,$ids);
+                $direct->submitShoppingAdForModerationIfDraft((int)$group->shopping_ad_id);
                 if($group->status!=='active')$direct->resumeShoppingAd((int)$group->shopping_ad_id);
                 $group->fill(['feed_id'=>$settings->feed_id,'status'=>'active','pause_reason'=>null,'boost_filter_hash'=>$hash,'last_sync_at'=>now(),'last_error'=>null])->save();
                 Product::whereIn('id',$ids)->update(['boost_status'=>'on','boost_last_error'=>null]);

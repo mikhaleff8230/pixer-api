@@ -62,6 +62,48 @@ class YandexDirectService
         $this->call('ads', 'update', ['Ads' => [['Id' => $adId, 'ShoppingAd' => ['FeedFilterConditions' => ['Items' => $this->buildFeedFilter($productIds)], 'DefaultTexts' => ['Товары на SANCAN']]]]]);
     }
 
+    /**
+     * Submit a newly-created shopping ad for review.
+     *
+     * Ads.add always creates a DRAFT. Direct requires a separate Ads.moderate
+     * call, so checking the status on every sync also repairs interrupted jobs.
+     */
+    public function submitShoppingAdForModerationIfDraft(int $adId): string
+    {
+        $result = $this->call('ads', 'get', [
+            'SelectionCriteria' => ['Ids' => [$adId]],
+            'FieldNames' => ['Id', 'Status', 'State', 'StatusClarification'],
+        ]);
+        $ad = $result['Ads'][0] ?? throw new RuntimeException('Direct не нашёл ShoppingAd #' . $adId . '.');
+        $status = strtoupper((string) ($ad['Status'] ?? 'UNKNOWN'));
+
+        if ($status === 'DRAFT') {
+            $moderation = $this->call('ads', 'moderate', [
+                'SelectionCriteria' => ['Ids' => [$adId]],
+            ]);
+            $action = $moderation['ModerateResults'][0] ?? [];
+            if (!empty($action['Errors'])) {
+                $error = $action['Errors'][0];
+                throw new RuntimeException(
+                    (string) ($error['Details'] ?? $error['Message'] ?? 'Не удалось отправить ShoppingAd на модерацию.'),
+                    (int) ($error['Code'] ?? 0)
+                );
+            }
+            if ((int) ($action['Id'] ?? 0) !== $adId) {
+                throw new RuntimeException('Direct не подтвердил отправку ShoppingAd #' . $adId . ' на модерацию.');
+            }
+            return 'MODERATION';
+        }
+
+        if ($status === 'REJECTED') {
+            throw new RuntimeException(
+                'ShoppingAd #' . $adId . ' отклонён: ' . ((string) ($ad['StatusClarification'] ?? 'причина не указана'))
+            );
+        }
+
+        return $status;
+    }
+
     public function pauseShoppingAd(int $adId): void { $this->call('ads', 'suspend', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
     public function resumeShoppingAd(int $adId): void { $this->call('ads', 'resume', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
 
