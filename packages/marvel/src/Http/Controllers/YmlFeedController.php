@@ -102,26 +102,18 @@ class YmlFeedController extends CoreController
                 $offer->addChild('vendorCode', htmlspecialchars($product->sku));
             }
 
-            // Поиск изображения
-            $image = null;
-            if (is_string($product->image)) {
-                $decoded = json_decode($product->image, true);
+            // Product casts image/gallery to arrays, while legacy records may still
+            // contain a JSON string or a plain URL. Export the main image first and
+            // then gallery images so Yandex can build a proper product card.
+            $images = array_values(array_unique(array_merge(
+                $this->extractImageUrls($product->image),
+                $this->extractImageUrls($product->gallery)
+            )));
 
-                // Пробуем декодировать JSON
-                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                    if (isset($decoded[0]['original']) && filter_var($decoded[0]['original'], FILTER_VALIDATE_URL)) {
-                        $image = $decoded[0]['original'];
-                    }
+            if ($images) {
+                foreach (array_slice($images, 0, 10) as $image) {
+                    $offer->addChild('picture', $image);
                 }
-                // Если просто строка — и это валидный URL
-                elseif (filter_var($product->image, FILTER_VALIDATE_URL)) {
-                    $image = $product->image;
-                }
-            }
-
-            // Добавляем картинку или комментарий, если не найдена
-            if ($image) {
-                $offer->addChild('picture', $image);
             } else {
                 $domOffer = dom_import_simplexml($offer);
                 $domDoc = $domOffer->ownerDocument;
@@ -137,5 +129,43 @@ class YmlFeedController extends CoreController
         return Response::make($xml->asXML(), 200, [
             'Content-Type' => 'application/xml'
         ]);
+    }
+
+    private function extractImageUrls($value): array
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $this->extractImageUrls($decoded);
+            }
+
+            return $this->isPublicImageUrl($value) ? [$value] : [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        foreach (['original', 'url', 'thumbnail'] as $key) {
+            if (isset($value[$key]) && $this->isPublicImageUrl($value[$key])) {
+                return [$value[$key]];
+            }
+        }
+
+        $urls = [];
+        foreach ($value as $item) {
+            $urls = array_merge($urls, $this->extractImageUrls($item));
+        }
+
+        return $urls;
+    }
+
+    private function isPublicImageUrl($value): bool
+    {
+        if (!is_string($value) || !filter_var($value, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        return in_array(strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true);
     }
 }
