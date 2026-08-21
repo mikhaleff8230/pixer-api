@@ -7,20 +7,12 @@ use Marvel\Enums\EventType;
 use Marvel\Events\OrderCreated;
 use Marvel\Notifications\NewOrderReceived;
 use Marvel\Notifications\OrderPlacedSuccessfully;
-use Marvel\Services\EmailService;
 use Marvel\Traits\OrderSmsTrait;
 use Marvel\Traits\SmsTrait;
 
 class SendOrderCreationNotification implements ShouldQueue
 {
     use SmsTrait, OrderSmsTrait;
-
-    protected $emailService;
-
-    public function __construct(EmailService $emailService)
-    {
-        $this->emailService = $emailService;
-    }
 
     /**
      * Handle the event.
@@ -34,10 +26,8 @@ class SendOrderCreationNotification implements ShouldQueue
         $customer = $event->order->customer;
         $emailReceiver = $this->getWhichUserWillGetEmail(EventType::ORDER_CREATED, $order->language);
         
-        // Send email notifications using EmailService
-        $this->emailService->sendOrderEventNotifications($order, 'created');
-        
-        // Keep existing notification logic for backward compatibility
+        // One notification per recipient, strictly respecting emailEvent settings.
+        // Vendors receive their child-order notification from OrderReceived.
         if ($customer && $emailReceiver['customer'] && $order->parent_id == null) {
             $customer->notify(new OrderPlacedSuccessfully($event->invoiceData));
         }

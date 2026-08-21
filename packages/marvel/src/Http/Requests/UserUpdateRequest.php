@@ -33,6 +33,8 @@ class UserUpdateRequest extends FormRequest
             'shop_id' => ['nullable', 'exists:Marvel\Database\Models\Shop,id'],
             'profile' => ['array'],
             'address' => ['array'],
+            'marketing_email_consent' => ['sometimes', 'boolean'],
+            'marketing_push_consent' => ['sometimes', 'boolean'],
             // 'shop' => ['array'],
         ];
     }

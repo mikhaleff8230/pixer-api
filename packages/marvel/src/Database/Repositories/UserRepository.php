@@ -190,6 +190,17 @@ class UserRepository extends BaseRepository
             if ($request->has('name')) {
                 $userUpdateData['name'] = $request->get('name');
             }
+            if ($request->has('marketing_email_consent')) {
+                $userUpdateData['marketing_email_consent_at'] = $request->boolean('marketing_email_consent') ? now() : null;
+            }
+            if ($request->has('marketing_push_consent')) {
+                $userUpdateData['marketing_push_consent_at'] = $request->boolean('marketing_push_consent') ? now() : null;
+            }
+            if ($request->boolean('marketing_email_consent') || $request->boolean('marketing_push_consent')) {
+                $userUpdateData['consent_version'] = '2026-08-20';
+                $userUpdateData['consent_ip'] = $request->ip();
+                $userUpdateData['consent_user_agent'] = mb_substr((string) $request->userAgent(), 0, 1000);
+            }
             if (!empty($userUpdateData)) {
                 $user->update($userUpdateData);
                 Log::info('UserRepository::updateUser - пользователь обновлен', [
