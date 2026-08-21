@@ -137,32 +137,37 @@ class UserRepository extends BaseRepository
                     // Защита: seller_id не может быть изменен через обновление профиля
                     unset($profileData['seller_id']); // Удаляем seller_id из данных обновления
                     
-                    // Убеждаемся, что avatar правильно обрабатывается
-                    // Если avatar это объект или массив, Laravel автоматически сериализует его в JSON
-                    // благодаря cast в модели Profile
-                    $profile = Profile::findOrFail($profileData['id']);
-                    
-                    // Обновляем только переданные поля
+                    $profile = Profile::where('id', $profileData['id'])
+                        ->where('customer_id', $user->id)
+                        ->firstOrFail();
+
+                    // Explicitly allow every field displayed by the seller profile form.
+                    // array_key_exists lets a seller intentionally clear an optional value.
+                    $editableProfileFields = [
+                        'contact',
+                        'bio',
+                        'avatar',
+                        'notifications',
+                        'market_role',
+                        'ownership_form',
+                        'full_name',
+                        'company_name',
+                        'registration_address',
+                        'actual_address',
+                        'tax_id',
+                        'company_account',
+                        'bank_bik',
+                        'bank_name',
+                        'contract_text',
+                        'contract_read',
+                        'contract_accepted',
+                        'contract_signed_at',
+                    ];
                     $updateData = [];
-                    if (isset($profileData['contact'])) {
-                        $updateData['contact'] = $profileData['contact'];
-                    }
-                    if (isset($profileData['bio'])) {
-                        $updateData['bio'] = $profileData['bio'];
-                    }
-                    if (isset($profileData['avatar'])) {
-                        // Убеждаемся, что avatar - это объект/массив, который будет сериализован в JSON
-                        $avatar = $profileData['avatar'];
-                        // Если avatar это объект с полями id, thumbnail, original - оставляем как есть
-                        // Laravel автоматически сериализует его в JSON благодаря cast
-                        $updateData['avatar'] = $avatar;
-                        
-                        Log::info('UserRepository::updateUser - обработка аватара', [
-                            'avatar_data' => $avatar,
-                            'avatar_type' => gettype($avatar),
-                            'is_array' => is_array($avatar),
-                            'is_object' => is_object($avatar),
-                        ]);
+                    foreach ($editableProfileFields as $field) {
+                        if (array_key_exists($field, $profileData)) {
+                            $updateData[$field] = $profileData[$field];
+                        }
                     }
                     
                     // Обновляем профиль только если есть данные для обновления
@@ -209,13 +214,8 @@ class UserRepository extends BaseRepository
                 ]);
             }
             
-            // Обновляем связанные данные для возврата
-            $user->profile = $user->profile;
-            $user->address = $user->address;
-            $user->shop = $user->shop;
-            $user->managed_shop = $user->managed_shop;
-            
-            return $user;
+            // Return fresh values so the form immediately reflects what was saved.
+            return $user->fresh(['profile', 'address', 'shops', 'managed_shop']);
         } catch (ValidationException $e) {
             Log::error('UserRepository::updateUser - ошибка валидации', [
                 'user_id' => $user->id,
