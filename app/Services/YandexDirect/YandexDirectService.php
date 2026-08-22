@@ -111,7 +111,7 @@ class YandexDirectService
 
     public function applyAdGroupAdjustment(int $adGroupId,int $modifier): array
     {
-        $existing=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);
+        $existing=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT'],'Levels'=>['AD_GROUP']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);
         $id=$existing['BidModifiers'][0]['Id']??null;
         if($id){$this->call('bidmodifiers','set',['BidModifiers'=>[['Id'=>(int)$id,'BidModifier'=>$modifier]]]);return ['id'=>(int)$id,'modifier'=>$modifier];}
         $added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>[['BidModifier'=>$modifier]]]]]);
