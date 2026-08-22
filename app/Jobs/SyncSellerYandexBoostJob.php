@@ -43,6 +43,7 @@ class SyncSellerYandexBoostJob implements ShouldQueue, ShouldBeUnique
             $direct = new YandexDirectService($settings);
 
             try {
+                if($settings->bid_ceiling_sync_status!=='synced'||(float)$settings->applied_bid_ceiling!==(float)$settings->desired_bid_ceiling){if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id);$group->update(['status'=>'paused','pause_reason'=>'strategy_not_synced','last_error'=>'Потолок ЕПК не подтверждён Direct API.']);return;}
                 if ($group->pause_reason === 'admin' || ($group->pause_reason === 'api_error' && !$this->allowApiErrorRecovery)) return;
                 if (!$seller || !$seller->is_active) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'seller_blocked','last_sync_at'=>now()]); return; }
                 if (!$ids) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'no_boost_products','boost_filter_hash'=>null,'last_sync_at'=>now(),'last_error'=>null]); return; }

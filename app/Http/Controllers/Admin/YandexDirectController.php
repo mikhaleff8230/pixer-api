@@ -26,7 +26,7 @@ class YandexDirectController extends Controller
         $settings = YandexDirectSetting::current();
         $wasEnabled = $settings->enabled;
         if (empty($data['oauth_token'])) unset($data['oauth_token']);
-        $settings->fill($data);
+        $settings->fill($data);$settings->desired_bid_ceiling=$data['campaign_bid_ceiling'];if($settings->isDirty('desired_bid_ceiling'))$settings->bid_ceiling_sync_status='pending';
         if ($settings->enabled) (new YandexDirectService($settings))->testConnection();
         $settings->last_error = null;
         $ceilingChanged=$settings->isDirty('campaign_bid_ceiling');$levelsChanged=$settings->isDirty('allowed_bid_levels');$settings->save();
@@ -57,8 +57,8 @@ class YandexDirectController extends Controller
     public function syncStrategy()
     {
         $settings=YandexDirectSetting::current();
-        try{$result=(new YandexDirectService($settings))->syncCampaignBidCeiling();$settings->update(['strategy_sync_status'=>'applied','strategy_synced_at'=>now(),'last_error'=>null]);SellerYandexAdGroup::whereNotNull('ad_group_id')->each(fn($group)=>UpdateSellerYandexBidModifierJob::dispatch($group->seller_id)->delay(now()->addSeconds(3)));return ['success'=>true,'strategy'=>$result];}
-        catch(\Throwable $e){$settings->update(['strategy_sync_status'=>'error','last_error'=>$e->getMessage()]);return response()->json(['success'=>false,'message'=>$e->getMessage()],422);}
+        try{$settings->update(['bid_ceiling_sync_status'=>'syncing']);$result=(new YandexDirectService($settings))->syncCampaignBidCeiling();$settings->update(['strategy_sync_status'=>'applied','desired_bid_ceiling'=>$settings->campaign_bid_ceiling,'applied_bid_ceiling'=>$result['bid_ceiling'],'bid_ceiling_sync_status'=>'synced','strategy_synced_at'=>now(),'last_error'=>null]);SellerYandexAdGroup::whereNotNull('ad_group_id')->each(fn($group)=>UpdateSellerYandexBidModifierJob::dispatch($group->seller_id)->delay(now()->addSeconds(3)));return ['success'=>true,'strategy'=>$result];}
+        catch(\Throwable $e){$settings->update(['strategy_sync_status'=>'error','bid_ceiling_sync_status'=>'error','last_error'=>$e->getMessage()]);return response()->json(['success'=>false,'message'=>$e->getMessage()],422);}
     }
 
     public function groupAction(Request $request, SellerYandexAdGroup $group)

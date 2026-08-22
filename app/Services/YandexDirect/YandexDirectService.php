@@ -111,23 +111,31 @@ class YandexDirectService
 
     public function applyAdGroupAdjustment(int $adGroupId,int $modifier): array
     {
-        $existing=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT'],'Levels'=>['AD_GROUP']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);
-        $id=$existing['BidModifiers'][0]['Id']??null;
-        if($id){$this->call('bidmodifiers','set',['BidModifiers'=>[['Id'=>(int)$id,'BidModifier'=>$modifier]]]);return ['id'=>(int)$id,'modifier'=>$modifier];}
-        $added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>['BidModifier'=>$modifier]]]]);
+        $existing=$this->getAdGroupAdjustment($adGroupId);$id=$existing['id']??null;
+        if($id)$this->call('bidmodifiers','set',['BidModifiers'=>[['Id'=>(int)$id,'BidModifier'=>$modifier]]]);
+        else {$added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>['BidModifier'=>$modifier]]]]);
         $result=$added['AddResults'][0]??[];
         if(!empty($result['Errors']))throw new RuntimeException((string)($result['Errors'][0]['Details']??$result['Errors'][0]['Message']??'Не удалось применить интенсивность.'));
-        return ['id'=>(int)($result['Id']??0),'modifier'=>$modifier];
+        }
+        $verified=$this->getAdGroupAdjustment($adGroupId);if(!$verified||$verified['modifier']!==$modifier)throw new RuntimeException('Direct не подтвердил коэффициент группы.');return $verified;
+    }
+
+    public function getAdGroupAdjustment(int $adGroupId): ?array
+    {
+        $response=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT'],'Levels'=>['AD_GROUP']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);$row=$response['BidModifiers'][0]??null;
+        return $row?['id'=>(int)$row['Id'],'modifier'=>(int)$row['AdGroupAdjustment']['BidModifier']:null;
     }
 
     public function syncCampaignBidCeiling(): array
     {
-        $campaign=$this->getCampaign();$strategy=$campaign['UnifiedCampaign']['BiddingStrategy']??[];$search=$strategy['Search']??[];
+        $campaign=$this->getCampaign();$strategy=$campaign['UnifiedCampaign']['BiddingStrategy']??[];$search=$strategy['Search']??[];$networkBefore=$strategy['Network']??[];$placesBefore=$search['PlacementTypes']??[];
         abort_unless(($search['BiddingStrategyType']??null)==='WB_MAXIMUM_CLICKS',422,'ЕПК должна использовать стратегию WB_MAXIMUM_CLICKS.');
         $weekly=(int)($search['WbMaximumClicks']['WeeklySpendLimit']??0);abort_if($weekly<=0,422,'Direct не вернул недельный бюджет кампании.');
         $search['WbMaximumClicks']['WeeklySpendLimit']=$weekly;$search['WbMaximumClicks']['BidCeiling']=(int)round((float)$this->settings->campaign_bid_ceiling*1000000);unset($search['WbMaximumClicks']['CustomPeriodBudget']);
         $this->call('campaigns','update',['Campaigns'=>[['Id'=>(int)$this->settings->campaign_id,'UnifiedCampaign'=>['BiddingStrategy'=>['Search'=>$search,'Network'=>$strategy['Network']??['BiddingStrategyType'=>'SERVING_OFF']]]]]]);
-        return ['weekly_budget'=>$weekly/1000000,'bid_ceiling'=>(float)$this->settings->campaign_bid_ceiling,'network_type'=>$strategy['Network']['BiddingStrategyType']??'SERVING_OFF'];
+        $after=$this->getCampaign()['UnifiedCampaign']['BiddingStrategy']??[];$afterSearch=$after['Search']??[];$applied=(int)($afterSearch['WbMaximumClicks']['BidCeiling']??0);$afterWeekly=(int)($afterSearch['WbMaximumClicks']['WeeklySpendLimit']??0);
+        if($applied!==(int)round((float)$this->settings->campaign_bid_ceiling*1000000)||$afterWeekly!==$weekly||($after['Network']??[])!==$networkBefore||($afterSearch['PlacementTypes']??[])!==$placesBefore)throw new RuntimeException('Direct не подтвердил потолок или изменил другие параметры стратегии.');
+        return ['weekly_budget'=>$afterWeekly/1000000,'bid_ceiling'=>$applied/1000000,'network_type'=>$after['Network']['BiddingStrategyType']??'SERVING_OFF','verified'=>true];
     }
 
     public function getGroupStats(array $adGroupIds, string $dateFrom, string $dateTo): array
