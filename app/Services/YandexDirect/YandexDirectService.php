@@ -123,7 +123,7 @@ class YandexDirectService
     public function getAdGroupAdjustment(int $adGroupId): ?array
     {
         $response=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT'],'Levels'=>['AD_GROUP']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);$row=$response['BidModifiers'][0]??null;
-        return $row?['id'=>(int)$row['Id'],'modifier'=>(int)$row['AdGroupAdjustment']['BidModifier']:null;
+        return $row ? ['id'=>(int)$row['Id'],'modifier'=>(int)$row['AdGroupAdjustment']['BidModifier']] : null;
     }
 
     public function syncCampaignBidCeiling(): array
