@@ -147,6 +147,7 @@ Route::get('/pro-subscription/check/{sellerId}', [App\Http\Controllers\ProSubscr
 // Seller Balance API routes (для продавцов)
 Route::middleware('auth:api')->prefix('seller')->group(function () {
     Route::get('/balance', [App\Http\Controllers\SellerBalanceController::class, 'get']);
+    Route::get('/balance/ledger', [App\Http\Controllers\SellerBalanceController::class, 'ledger']);
     Route::post('/balance/deposit', [App\Http\Controllers\SellerBalanceController::class, 'deposit']);
     Route::get('/balance/check-pending', [App\Http\Controllers\SellerBalanceController::class, 'checkPending']);
 });

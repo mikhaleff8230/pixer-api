@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\SellerBalance;
 use App\Models\BalanceDeposit;
+use App\Models\SellerBalanceTransaction;
 use App\Services\YooKassa\YooKassaService;
 use App\Services\YooKassa\YooKassaConfig;
 use Carbon\Carbon;
@@ -15,6 +16,61 @@ use Marvel\Database\Models\User;
 
 class SellerBalanceController extends Controller
 {
+    /**
+     * Единый журнал пополнений и списаний баланса продавца.
+     * GET /api/seller/balance/ledger
+     */
+    public function ledger(Request $request)
+    {
+        $user = Auth::user();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated.'], 401);
+        }
+
+        $limit = min(max((int) $request->get('limit', 50), 1), 100);
+        $transactions = SellerBalanceTransaction::query()
+            ->where('seller_id', $user->id)
+            ->latest()
+            ->limit($limit)
+            ->get()
+            ->map(fn (SellerBalanceTransaction $transaction) => [
+                'id' => 'transaction-' . $transaction->id,
+                'type' => $transaction->type,
+                'amount' => (float) $transaction->amount,
+                'balance_before' => (float) $transaction->balance_before,
+                'balance_after' => (float) $transaction->balance_after,
+                'description' => $transaction->description ?: 'Операция по балансу',
+                'created_at' => $transaction->created_at,
+            ]);
+
+        $deposits = BalanceDeposit::query()
+            ->where('seller_id', $user->id)
+            ->where('status', 'succeeded')
+            ->latest('paid_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (BalanceDeposit $deposit) => [
+                'id' => 'deposit-' . $deposit->id,
+                'type' => 'balance_deposit',
+                'amount' => (float) $deposit->amount,
+                'balance_before' => null,
+                'balance_after' => null,
+                'description' => str_starts_with((string) $deposit->payment_id, 'virtual_')
+                    ? 'Пополнение баланса администратором'
+                    : 'Пополнение баланса',
+                'created_at' => $deposit->paid_at ?: $deposit->updated_at,
+            ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $transactions
+                ->concat($deposits)
+                ->sortByDesc('created_at')
+                ->take($limit)
+                ->values(),
+        ]);
+    }
+
     /**
      * Получить баланс продавца
      * GET /api/seller/balance
@@ -453,7 +509,6 @@ class SellerBalanceController extends Controller
         }
     }
 }
-
 
 
 
