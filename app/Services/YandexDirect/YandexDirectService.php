@@ -114,7 +114,7 @@ class YandexDirectService
         $existing=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT'],'Levels'=>['AD_GROUP']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);
         $id=$existing['BidModifiers'][0]['Id']??null;
         if($id){$this->call('bidmodifiers','set',['BidModifiers'=>[['Id'=>(int)$id,'BidModifier'=>$modifier]]]);return ['id'=>(int)$id,'modifier'=>$modifier];}
-        $added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>[['BidModifier'=>$modifier]]]]]);
+        $added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>['BidModifier'=>$modifier]]]]);
         $result=$added['AddResults'][0]??[];
         if(!empty($result['Errors']))throw new RuntimeException((string)($result['Errors'][0]['Details']??$result['Errors'][0]['Message']??'Не удалось применить интенсивность.'));
         return ['id'=>(int)($result['Id']??0),'modifier'=>$modifier];
