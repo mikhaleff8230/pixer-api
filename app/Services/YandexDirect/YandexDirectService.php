@@ -27,12 +27,14 @@ class YandexDirectService
         if ($type !== 'UNIFIED_CAMPAIGN') {
             throw new RuntimeException('Указанная кампания не является поддерживаемой ЕПК. Тип: ' . ($type ?: 'не определён'));
         }
-        return ['api' => true, 'campaign' => ['id' => $campaign['Id'], 'name' => $campaign['Name'] ?? null, 'type' => $type], 'feed' => ['id' => $feed['Id'], 'name' => $feed['Name'] ?? null]];
+        $strategy=$campaign['UnifiedCampaign']['BiddingStrategy']??[];$search=$strategy['Search']??[];$network=$strategy['Network']??[];
+        $searchCeiling=$search['WbMaximumClicks']['BidCeiling']??null;$networkCeiling=$network['WbMaximumClicks']['BidCeiling']??null;
+        return ['api' => true, 'campaign' => ['id' => $campaign['Id'], 'name' => $campaign['Name'] ?? null, 'type' => $type], 'strategy'=>['search_type'=>$search['BiddingStrategyType']??null,'network_type'=>$network['BiddingStrategyType']??null,'search_bid_ceiling'=>$searchCeiling===null?null:$searchCeiling/1000000,'network_bid_ceiling'=>$networkCeiling===null?null:$networkCeiling/1000000,'search_places'=>$search['PlacementTypes']??[],'network_places'=>$network['PlacementTypes']??[]], 'feed' => ['id' => $feed['Id'], 'name' => $feed['Name'] ?? null]];
     }
 
     public function getCampaign(): array
     {
-        $rows = $this->call('campaigns', 'get', ['SelectionCriteria' => ['Ids' => [(int) $this->settings->campaign_id]], 'FieldNames' => ['Id', 'Name', 'Type', 'State']]);
+        $rows = $this->call('campaigns', 'get', ['SelectionCriteria' => ['Ids' => [(int) $this->settings->campaign_id]], 'FieldNames' => ['Id', 'Name', 'Type', 'State'], 'UnifiedCampaignFieldNames'=>['BiddingStrategy']]);
         return $rows['Campaigns'][0] ?? throw new RuntimeException('Кампания #' . $this->settings->campaign_id . ' не найдена.');
     }
 
@@ -106,6 +108,17 @@ class YandexDirectService
 
     public function pauseShoppingAd(int $adId): void { $this->call('ads', 'suspend', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
     public function resumeShoppingAd(int $adId): void { $this->call('ads', 'resume', ['SelectionCriteria' => ['Ids' => [$adId]]]); }
+
+    public function applyAdGroupAdjustment(int $adGroupId,int $modifier): array
+    {
+        $existing=$this->call('bidmodifiers','get',['SelectionCriteria'=>['AdGroupIds'=>[$adGroupId],'Types'=>['AD_GROUP_ADJUSTMENT']],'FieldNames'=>['Id','AdGroupId','Type'],'AdGroupAdjustmentFieldNames'=>['BidModifier']]);
+        $id=$existing['BidModifiers'][0]['Id']??null;
+        if($id){$this->call('bidmodifiers','set',['BidModifiers'=>[['Id'=>(int)$id,'BidModifier'=>$modifier]]]);return ['id'=>(int)$id,'modifier'=>$modifier];}
+        $added=$this->call('bidmodifiers','add',['BidModifiers'=>[['AdGroupId'=>$adGroupId,'AdGroupAdjustment'=>[['BidModifier'=>$modifier]]]]]);
+        $result=$added['AddResults'][0]??[];
+        if(!empty($result['Errors']))throw new RuntimeException((string)($result['Errors'][0]['Details']??$result['Errors'][0]['Message']??'Не удалось применить интенсивность.'));
+        return ['id'=>(int)($result['Id']??0),'modifier'=>$modifier];
+    }
 
     public function getGroupStats(array $adGroupIds, string $dateFrom, string $dateTo): array
     {

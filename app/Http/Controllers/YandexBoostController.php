@@ -9,6 +9,10 @@ use App\Models\SellerAdBillingEntry;
 use App\Models\SellerAdStatDaily;
 use App\Models\SellerBalance;
 use App\Models\YandexDirectSetting;
+use App\Models\SellerYandexAdGroup;
+use App\Models\SellerYandexIntensityAudit;
+use App\Jobs\UpdateSellerYandexBidModifierJob;
+use Carbon\Carbon;
 use App\Services\DecimalMoney;
 use Illuminate\Http\Request;
 use Marvel\Database\Models\Product;
@@ -50,10 +54,30 @@ class YandexBoostController extends Controller
             ->with(['shop:id,name,slug,owner_id', 'type:id,name'])
             ->latest()
             ->paginate(min(max($request->integer('limit', 20), 1), 100));
-        $productIds=$products->getCollection()->pluck('id');$productStats=ProductPromotionStatDaily::whereIn('product_id',$productIds)->selectRaw('product_id, SUM(views) as views, SUM(yandex_clicks) as yandex_clicks')->groupBy('product_id')->get()->keyBy('product_id');
+        [$dateFrom,$dateTo,$period]=$this->period($request);
+        $productIds=$products->getCollection()->pluck('id');$productStats=ProductPromotionStatDaily::whereIn('product_id',$productIds)->whereBetween('date',[$dateFrom,$dateTo])->selectRaw('product_id, SUM(views) as views, SUM(yandex_clicks) as yandex_clicks')->groupBy('product_id')->get()->keyBy('product_id');
         $products->getCollection()->transform(function($product)use($productStats){$product->promotion_stats=$productStats->get($product->id)?:['views'=>0,'yandex_clicks'=>0];return $product;});
-        $stats=SellerAdStatDaily::where('seller_id',$seller->id);
-        return ['balance'=>$balance->balance,'active_products'=>(clone $productQuery)->where('boost_enabled',true)->count(),'spent'=>SellerAdBillingEntry::where('seller_id',$seller->id)->where('status','charged')->sum('seller_charge'),'impressions'=>(clone $stats)->sum('impressions'),'clicks'=>(clone $stats)->sum('clicks'),'shops'=>$shops,'selected_shop_id'=>$shopId,'products'=>$products];
+        $stats=SellerAdStatDaily::where('seller_id',$seller->id)->whereBetween('date',[$dateFrom,$dateTo]);
+        $settings=YandexDirectSetting::current();$group=SellerYandexAdGroup::where('seller_id',$seller->id)->where('campaign_id',$settings->campaign_id)->first();
+        return ['balance'=>$balance->balance,'active_products'=>(clone $productQuery)->where('boost_enabled',true)->count(),'spent'=>SellerAdBillingEntry::where('seller_id',$seller->id)->where('status','charged')->whereBetween('period_to',[$dateFrom->copy()->startOfDay(),$dateTo->copy()->endOfDay()])->sum('seller_charge'),'impressions'=>(clone $stats)->sum('impressions'),'clicks'=>(clone $stats)->sum('clicks'),'period'=>['key'=>$period,'date_from'=>$dateFrom->toDateString(),'date_to'=>$dateTo->toDateString()],'intensity'=>['bid_level'=>(float)($group?->bid_level?:$settings->default_bid_level),'allowed_levels'=>$settings->levels(),'default_level'=>(float)$settings->default_bid_level],'shops'=>$shops,'selected_shop_id'=>$shopId,'products'=>$products];
+    }
+
+    public function updateIntensity(Request $request)
+    {
+        $settings=YandexDirectSetting::current();$level=(float)$request->validate(['bid_level'=>'required|numeric'])['bid_level'];
+        abort_unless(in_array($level,$settings->levels(),true),422,'Выберите разрешённый уровень интенсивности.');
+        abort_if($level>(float)$settings->campaign_bid_ceiling,422,'Уровень не может превышать максимальную интенсивность кампании.');
+        $group=SellerYandexAdGroup::firstOrCreate(['seller_id'=>$request->user()->id,'campaign_id'=>$settings->campaign_id,'slot'=>1],['feed_id'=>$settings->feed_id,'status'=>'pending','bid_level'=>$settings->default_bid_level]);
+        $old=(float)$group->bid_level;$modifier=$settings->modifierFor($level);$group->update(['bid_level'=>$level]);
+        SellerYandexIntensityAudit::create(['seller_id'=>$request->user()->id,'old_level'=>$old,'new_level'=>$level,'calculated_modifier'=>$modifier,'source'=>'seller']);
+        UpdateSellerYandexBidModifierJob::dispatch($request->user()->id)->delay(now()->addSeconds(3));
+        return ['success'=>true,'bid_level'=>$level,'modifier'=>$modifier,'message'=>'Интенсивность сохранена и будет применена в течение нескольких секунд.'];
+    }
+
+    private function period(Request $request): array
+    {
+        $key=(string)$request->get('period','today');$today=today();
+        return match($key){'yesterday'=>[$today->copy()->subDay(),$today->copy()->subDay(),$key],'7d'=>[$today->copy()->subDays(6),$today,$key],'30d'=>[$today->copy()->subDays(29),$today,$key],'custom'=>[Carbon::parse($request->validate(['date_from'=>'required|date','date_to'=>'required|date|after_or_equal:date_from'])['date_from']),Carbon::parse($request->input('date_to')),$key],default=>[$today,$today,'today']};
     }
 
     public function bulkToggle(Request $request)
