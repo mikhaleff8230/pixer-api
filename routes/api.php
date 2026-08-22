@@ -98,6 +98,7 @@ Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN])->prefix
     Route::get('/yandex-direct', [YandexDirectController::class, 'show']);
     Route::put('/yandex-direct', [YandexDirectController::class, 'update']);
     Route::post('/yandex-direct/test', [YandexDirectController::class, 'test'])->middleware('throttle:10,1');
+    Route::post('/yandex-direct/sync-strategy', [YandexDirectController::class, 'syncStrategy'])->middleware('throttle:5,1');
     Route::get('/yandex-direct/errors', [YandexDirectController::class, 'errors']);
     Route::post('/yandex-direct/groups/{group}/action', [YandexDirectController::class, 'groupAction']);
     Route::get('/homepage-banners', [App\Http\Controllers\HomepageBannerController::class, 'adminIndex']);

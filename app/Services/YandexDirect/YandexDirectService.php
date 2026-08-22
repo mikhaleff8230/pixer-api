@@ -120,6 +120,16 @@ class YandexDirectService
         return ['id'=>(int)($result['Id']??0),'modifier'=>$modifier];
     }
 
+    public function syncCampaignBidCeiling(): array
+    {
+        $campaign=$this->getCampaign();$strategy=$campaign['UnifiedCampaign']['BiddingStrategy']??[];$search=$strategy['Search']??[];
+        abort_unless(($search['BiddingStrategyType']??null)==='WB_MAXIMUM_CLICKS',422,'ЕПК должна использовать стратегию WB_MAXIMUM_CLICKS.');
+        $weekly=(int)($search['WbMaximumClicks']['WeeklySpendLimit']??0);abort_if($weekly<=0,422,'Direct не вернул недельный бюджет кампании.');
+        $search['WbMaximumClicks']['WeeklySpendLimit']=$weekly;$search['WbMaximumClicks']['BidCeiling']=(int)round((float)$this->settings->campaign_bid_ceiling*1000000);unset($search['WbMaximumClicks']['CustomPeriodBudget']);
+        $this->call('campaigns','update',['Campaigns'=>[['Id'=>(int)$this->settings->campaign_id,'UnifiedCampaign'=>['BiddingStrategy'=>['Search'=>$search,'Network'=>$strategy['Network']??['BiddingStrategyType'=>'SERVING_OFF']]]]]]);
+        return ['weekly_budget'=>$weekly/1000000,'bid_ceiling'=>(float)$this->settings->campaign_bid_ceiling,'network_type'=>$strategy['Network']['BiddingStrategyType']??'SERVING_OFF'];
+    }
+
     public function getGroupStats(array $adGroupIds, string $dateFrom, string $dateTo): array
     {
         if (!$adGroupIds) return [];

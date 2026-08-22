@@ -22,7 +22,7 @@ class UpdateSellerYandexBidModifierJob implements ShouldQueue, ShouldBeUnique
     {
         $settings=YandexDirectSetting::current();
         $group=SellerYandexAdGroup::where('seller_id',$this->sellerId)->where('campaign_id',$settings->campaign_id)->first();
-        if(!$settings->enabled||!$group?->ad_group_id)return;
+        if(!$settings->enabled||$settings->strategy_sync_status!=='applied'||!$group?->ad_group_id)return;
         try {
             $modifier=$settings->modifierFor((float)$group->bid_level);
             $result=(new YandexDirectService($settings))->applyAdGroupAdjustment((int)$group->ad_group_id,$modifier);

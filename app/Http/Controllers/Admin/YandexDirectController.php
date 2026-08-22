@@ -54,6 +54,13 @@ class YandexDirectController extends Controller
 
     public function errors(Request $request) { return YandexDirectErrorLog::latest()->paginate($request->integer('limit', 30)); }
 
+    public function syncStrategy()
+    {
+        $settings=YandexDirectSetting::current();
+        try{$result=(new YandexDirectService($settings))->syncCampaignBidCeiling();$settings->update(['strategy_sync_status'=>'applied','strategy_synced_at'=>now(),'last_error'=>null]);SellerYandexAdGroup::whereNotNull('ad_group_id')->each(fn($group)=>UpdateSellerYandexBidModifierJob::dispatch($group->seller_id)->delay(now()->addSeconds(3)));return ['success'=>true,'strategy'=>$result];}
+        catch(\Throwable $e){$settings->update(['strategy_sync_status'=>'error','last_error'=>$e->getMessage()]);return response()->json(['success'=>false,'message'=>$e->getMessage()],422);}
+    }
+
     public function groupAction(Request $request, SellerYandexAdGroup $group)
     {
         $data=$request->validate(['action'=>'required|in:pause,resume']);
