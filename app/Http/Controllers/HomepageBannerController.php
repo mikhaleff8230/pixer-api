@@ -14,7 +14,7 @@ class HomepageBannerController extends Controller
     private function bannerData(Request $request): array
     {
         return $request->validate([
-            'kind' => ['required', Rule::in(['hero', 'strip'])],
+            'kind' => ['required', Rule::in(['hero', 'strip', 'mobile'])],
             'is_active' => ['required', 'boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'content' => ['required', 'array'],
@@ -80,7 +80,7 @@ class HomepageBannerController extends Controller
             'interval_ms' => ['required', 'integer', 'min:1500', 'max:60000'],
             'banners' => ['required', 'array', 'max:30'],
             'banners.*.id' => ['nullable', 'integer'],
-            'banners.*.kind' => ['required', Rule::in(['hero', 'strip'])],
+            'banners.*.kind' => ['required', Rule::in(['hero', 'strip', 'mobile'])],
             'banners.*.is_active' => ['required', 'boolean'],
             'banners.*.content' => ['required', 'array'],
             'images.*' => ['nullable', 'image', 'mimes:jpeg,png,webp,avif', 'max:8192'],
