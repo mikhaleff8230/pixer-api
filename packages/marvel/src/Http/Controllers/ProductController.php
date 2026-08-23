@@ -421,7 +421,7 @@ class ProductController extends CoreController
             'attribute_values' => $request->attribute_values,
         ]));
 
-        return \Cache::remember($cacheKey, 300, function () use ($request, $limit, $categorySlugs, $language) {
+        $fetchProducts = function () use ($request, $limit, $categorySlugs, $language) {
             
             try {
                 // Создаем запрос через модель Product напрямую
@@ -522,7 +522,21 @@ class ProductController extends CoreController
                     ['path' => request()->url()]
                 );
             }
-        });
+        };
+
+        // Каталог должен оставаться доступным даже при временной проблеме
+        // файлового/внешнего cache store. Ранее ошибка записи Cache::remember
+        // происходила до выполнения callback и превращала запрос категории в 500.
+        try {
+            return \Cache::remember($cacheKey, 300, $fetchProducts);
+        } catch (\Throwable $cacheException) {
+            \Log::warning('Dynamic products cache unavailable; using direct query', [
+                'error' => $cacheException->getMessage(),
+                'categories' => $categorySlugs,
+            ]);
+
+            return $fetchProducts();
+        }
     }
 
     /**
