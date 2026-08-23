@@ -25,7 +25,7 @@ class AdminBillingSettingsController extends Controller
                     'auto_generation' => (bool) ($settings['auto_generation'] ?? true),
                     'generation_day' => (int) ($settings['generation_day'] ?? 1),
                     'days_before_overdue' => (int) ($settings['days_before_overdue'] ?? 30),
-                    'overdue_action' => $settings['overdue_action'] ?? 'hide_products',
+                    'overdue_action' => 'none',
                 ]
             ]);
         } catch (\Exception $e) {
@@ -49,7 +49,7 @@ class AdminBillingSettingsController extends Controller
                 'auto_generation' => 'sometimes|boolean',
                 'generation_day' => 'sometimes|integer|min:1|max:31',
                 'days_before_overdue' => 'sometimes|integer|min:1',
-                'overdue_action' => 'sometimes|in:hide_products,block_adding',
+                'overdue_action' => 'sometimes|in:none',
             ]);
 
             foreach ($validated as $key => $value) {
@@ -69,7 +69,6 @@ class AdminBillingSettingsController extends Controller
         }
     }
 }
-
 
 
 

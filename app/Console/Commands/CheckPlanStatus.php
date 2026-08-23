@@ -3,11 +3,8 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Models\Invoice;
 use Marvel\Database\Models\User;
-use Marvel\Database\Models\Product;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Log;
 
 class CheckPlanStatus extends Command
 {
@@ -36,24 +33,8 @@ class CheckPlanStatus extends Command
             if (!$isPaid) {
                 $this->warn("Тариф продавца {$seller->id} ({$seller->name}) не оплачен за текущий период");
 
-                // Проверяем, есть ли просроченные счета
-                $overdueInvoices = Invoice::where('seller_id', $seller->id)
-                    ->where('status', 'overdue')
-                    ->count();
-
-                if ($overdueInvoices > 0) {
-                    // Если есть просроченные счета, скрываем товары (если еще не скрыты)
-                    $shops = $seller->shops;
-                    foreach ($shops as $shop) {
-                        $hidden = Product::where('shop_id', $shop->id)
-                            ->where('status', 'publish')
-                            ->update(['status' => 'unpublish']);
-                        
-                        if ($hidden > 0) {
-                            $this->info("  Скрыто {$hidden} товаров для продавца {$seller->id}");
-                        }
-                    }
-                }
+                // Исторические счета и тарифы больше не управляют публикацией товаров.
+                // Размещение товаров в SANCAN бесплатное, поэтому status менять нельзя.
 
                 $deactivatedCount++;
             }

@@ -495,18 +495,8 @@ class InvoiceController extends Controller
                     $purchase->update(['status' => 'paid']);
                 }
 
-                // Восстанавливаем товары продавца, если они были скрыты
-                $seller = $invoice->seller;
-                if ($seller) {
-                    $shops = $seller->shops;
-                    foreach ($shops as $shop) {
-                        \Marvel\Database\Models\Product::where('shop_id', $shop->id)
-                            ->where('status', 'unpublish')
-                            ->update(['status' => 'publish']);
-                    }
-                }
-
-                Log::info('InvoiceController@webhook: Счёт оплачен, товары восстановлены', [
+                // Оплата исторического счёта не меняет статусы товаров.
+                Log::info('InvoiceController@webhook: Счёт оплачен', [
                     'invoice_id' => $invoice->id,
                     'payment_id' => $paymentId,
                     'seller_id' => $invoice->seller_id
@@ -529,6 +519,5 @@ class InvoiceController extends Controller
         }
     }
 }
-
 
 

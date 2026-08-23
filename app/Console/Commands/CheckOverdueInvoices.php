@@ -5,8 +5,6 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Models\Invoice;
 use App\Models\BillingSettings;
-use Marvel\Database\Models\Product;
-use Illuminate\Support\Facades\DB;
 
 class CheckOverdueInvoices extends Command
 {
@@ -18,15 +16,12 @@ class CheckOverdueInvoices extends Command
         $this->info('Checking overdue invoices...');
 
         $daysBeforeOverdue = (int) BillingSettings::get('days_before_overdue', 30);
-        $overdueAction = BillingSettings::get('overdue_action', 'hide_products');
-
         // Находим счета со статусом pending, старше указанного количества дней
         $overdueInvoices = Invoice::where('status', 'pending')
             ->where('created_at', '<=', now()->subDays($daysBeforeOverdue))
             ->get();
 
         $markedOverdue = 0;
-        $productsHidden = 0;
 
         foreach ($overdueInvoices as $invoice) {
             // Меняем статус на overdue
@@ -35,29 +30,13 @@ class CheckOverdueInvoices extends Command
 
             $this->info("Marked invoice {$invoice->id} as overdue for seller {$invoice->seller_id}");
 
-            // Переводим товары продавца в inactive
-            if ($overdueAction === 'hide_products') {
-                $seller = $invoice->seller;
-                $shops = $seller->shops;
-
-                foreach ($shops as $shop) {
-                    $hidden = Product::where('shop_id', $shop->id)
-                        ->where('status', 'publish')
-                        ->update(['status' => 'unpublish']);
-
-                    $productsHidden += $hidden;
-                }
-
-                $this->info("Hidden {$productsHidden} products for seller {$invoice->seller_id}");
-            }
+            // Просроченный исторический счёт не влияет на товары: размещение бесплатно.
         }
 
-        $this->info("Overdue check completed. Marked {$markedOverdue} invoices as overdue, hidden {$productsHidden} products.");
+        $this->info("Overdue check completed. Marked {$markedOverdue} invoices as overdue. Product statuses were not changed.");
         return 0;
     }
 }
-
-
 
 
 
