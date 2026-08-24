@@ -28,6 +28,9 @@ use Marvel\Exceptions\MarvelNotFoundException;
 use \OpenAI;
 use Marvel\Services\LocationService;
 use Marvel\Database\Models\Region;
+use Marvel\Database\Models\Shop;
+use Marvel\Enums\Permission;
+use Laravel\Sanctum\PersonalAccessToken;
 
 
 class ProductController extends CoreController
@@ -725,6 +728,21 @@ class ProductController extends CoreController
         $this->repository->pushCriteria(app(\Prettus\Repository\Criteria\RequestCriteria::class));
         
         $query = $this->repository->where('language', $language)->whereNotIn('id', $unavailableProducts);
+
+        // GET /products is public, so auth middleware does not populate the user.
+        // Resolve an optional Sanctum bearer token explicitly for seller/admin lists.
+        // Public customers must never receive drafts or inactive products.
+        $manager = $this->resolveProductListManager($request);
+        if (!$manager) {
+            $query = $query->where('status', 'publish')->where('is_active', true);
+        } elseif (!$manager->hasPermissionTo(Permission::SUPER_ADMIN)) {
+            if ($manager->hasPermissionTo(Permission::STORE_OWNER)) {
+                $shopIds = Shop::query()->where('owner_id', $manager->id)->pluck('id');
+                $query = $query->whereIn('shop_id', $shopIds);
+            } else {
+                $query = $query->where('shop_id', $manager->shop_id);
+            }
+        }
         
         // Явно добавляем фильтр по group_key, если он указан
         // RequestCriteria должен обработать это через fieldSearchable, но на всякий случай добавляем явно
@@ -737,6 +755,34 @@ class ProductController extends CoreController
         }
         
         return $query;
+    }
+
+    private function resolveProductListManager(Request $request)
+    {
+        $user = null;
+        try {
+            $user = $request->user();
+        } catch (\Throwable $exception) {
+            // Public requests do not have a session-backed user resolver.
+        }
+
+        if (!$user && $request->bearerToken()) {
+            try {
+                $user = PersonalAccessToken::findToken($request->bearerToken())?->tokenable;
+            } catch (\Throwable $exception) {
+                $user = null;
+            }
+        }
+
+        if (!$user || !$user->hasAnyPermission([
+            Permission::SUPER_ADMIN,
+            Permission::STORE_OWNER,
+            Permission::STAFF,
+        ])) {
+            return null;
+        }
+
+        return $user;
     }
 
     /**
