@@ -28,8 +28,9 @@ class SellerBalanceController extends Controller
         }
 
         $limit = min(max((int) $request->get('limit', 50), 1), 100);
-        $transactions = SellerBalanceTransaction::query()
+        $regularTransactions = SellerBalanceTransaction::query()
             ->where('seller_id', $user->id)
+            ->where('type', '!=', 'yandex_promotion')
             ->latest()
             ->limit($limit)
             ->get()
@@ -42,6 +43,42 @@ class SellerBalanceController extends Controller
                 'description' => $transaction->description ?: 'Операция по балансу',
                 'created_at' => $transaction->created_at,
             ]);
+
+        // Direct продолжает списывать фактический расход с прежней периодичностью,
+        // но в журнале продавца показываем одну суммарную строку за локальный день.
+        $timezoneOffset = min(max((int) $request->get('timezone_offset', 0), -720), 840);
+        $localDateSql = 'DATE(DATE_ADD(created_at, INTERVAL ? MINUTE))';
+        $promotionDays = SellerBalanceTransaction::query()
+            ->where('seller_id', $user->id)
+            ->where('type', 'yandex_promotion')
+            ->selectRaw("{$localDateSql} as billing_date, SUM(amount) as amount, MAX(id) as latest_id, COUNT(*) as charges_count", [$timezoneOffset])
+            ->groupByRaw($localDateSql, [$timezoneOffset])
+            ->orderByDesc('billing_date')
+            ->limit($limit)
+            ->get();
+
+        $latestPromotionTransactions = SellerBalanceTransaction::query()
+            ->whereIn('id', $promotionDays->pluck('latest_id'))
+            ->get()
+            ->keyBy('id');
+
+        $promotionTransactions = $promotionDays
+            ->map(function ($day) use ($latestPromotionTransactions) {
+                $latest = $latestPromotionTransactions->get($day->latest_id);
+                $amount = (float) $day->amount;
+                $balanceAfter = $latest ? (float) $latest->balance_after : null;
+
+                return [
+                    'id' => 'yandex-promotion-day-' . $day->billing_date,
+                    'type' => 'yandex_promotion',
+                    'amount' => $amount,
+                    'balance_before' => $balanceAfter === null ? null : $balanceAfter - $amount,
+                    'balance_after' => $balanceAfter,
+                    'description' => 'Продвижение товаров за день (операций: ' . $day->charges_count . ')',
+                    'created_at' => $latest?->created_at,
+                ];
+            })
+            ->filter(fn (array $transaction) => $transaction['created_at'] !== null);
 
         $deposits = BalanceDeposit::query()
             ->where('seller_id', $user->id)
@@ -63,7 +100,8 @@ class SellerBalanceController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $transactions
+            'data' => $regularTransactions
+                ->concat($promotionTransactions)
                 ->concat($deposits)
                 ->sortByDesc('created_at')
                 ->take($limit)
@@ -509,6 +547,4 @@ class SellerBalanceController extends Controller
         }
     }
 }
-
-
 

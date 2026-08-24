@@ -55,8 +55,31 @@ class YandexBoostController extends Controller
             ->latest()
             ->paginate(min(max($request->integer('limit', 20), 1), 100));
         [$dateFrom,$dateTo,$period]=$this->period($request);
-        $productIds=$products->getCollection()->pluck('id');$productStats=ProductPromotionStatDaily::whereIn('product_id',$productIds)->whereBetween('date',[$dateFrom,$dateTo])->selectRaw('product_id, SUM(views) as views, SUM(yandex_clicks) as yandex_clicks')->groupBy('product_id')->get()->keyBy('product_id');
-        $products->getCollection()->transform(function($product)use($productStats){$product->promotion_stats=$productStats->get($product->id)?:['views'=>0,'yandex_clicks'=>0];return $product;});
+        $productIds = $products->getCollection()->pluck('id');
+        $productViews = ProductPromotionStatDaily::query()
+            ->where('seller_id', $seller->id)
+            ->whereIn('product_id', $productIds)
+            ->whereBetween('date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->selectRaw('product_id, SUM(views) as views')
+            ->groupBy('product_id')
+            ->pluck('views', 'product_id');
+        $productClicks = ProductPromotionVisit::query()
+            ->where('seller_id', $seller->id)
+            ->whereIn('product_id', $productIds)
+            ->where('source', 'yandex')
+            ->where('type', 'paid_click')
+            ->whereBetween('created_at', [$dateFrom->copy()->startOfDay(), $dateTo->copy()->endOfDay()])
+            ->selectRaw('product_id, COUNT(*) as yandex_clicks')
+            ->groupBy('product_id')
+            ->pluck('yandex_clicks', 'product_id');
+        $products->getCollection()->transform(function ($product) use ($productViews, $productClicks) {
+            $product->promotion_stats = [
+                'views' => (int) ($productViews->get($product->id) ?? 0),
+                'yandex_clicks' => (int) ($productClicks->get($product->id) ?? 0),
+            ];
+
+            return $product;
+        });
         $stats=SellerAdStatDaily::where('seller_id',$seller->id)->whereBetween('date',[$dateFrom,$dateTo]);
         $settings=YandexDirectSetting::current();$group=SellerYandexAdGroup::where('seller_id',$seller->id)->where('campaign_id',$settings->campaign_id)->first();
         return ['balance'=>$balance->balance,'active_products'=>(clone $productQuery)->where('boost_enabled',true)->count(),'spent'=>SellerAdBillingEntry::where('seller_id',$seller->id)->where('status','charged')->whereBetween('period_to',[$dateFrom->copy()->startOfDay(),$dateTo->copy()->endOfDay()])->sum('seller_charge'),'impressions'=>(clone $stats)->sum('impressions'),'clicks'=>(clone $stats)->sum('clicks'),'period'=>['key'=>$period,'date_from'=>$dateFrom->toDateString(),'date_to'=>$dateTo->toDateString()],'intensity'=>['bid_level'=>(float)($group?->bid_level?:$settings->default_bid_level),'allowed_levels'=>$settings->levels(),'default_level'=>(float)$settings->default_bid_level],'shops'=>$shops,'selected_shop_id'=>$shopId,'products'=>$products];
