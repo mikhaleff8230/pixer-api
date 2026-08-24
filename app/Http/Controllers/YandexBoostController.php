@@ -46,6 +46,10 @@ class YandexBoostController extends Controller
             abort_unless($shops->contains('id', $shopId), 403, 'Этот магазин не принадлежит продавцу.');
         }
 
+        [$dateFrom,$dateTo,$period]=$this->period($request);
+        $sortBy = (string) $request->get('sort_by', '');
+        $sortOrder = strtolower((string) $request->get('sort_order', 'desc')) === 'asc' ? 'asc' : 'desc';
+
         $productQuery = Product::query()
             ->whereHas('shop', fn ($query) => $query->where('owner_id', $seller->id))
             ->where('status', 'publish')
@@ -53,34 +57,45 @@ class YandexBoostController extends Controller
             ->when($shopId, fn ($query) => $query->where('shop_id', $shopId))
             ->when($request->filled('search'), fn ($query) => $query->where('name', 'like', '%' . $request->string('search')->trim() . '%'));
 
-        $products = (clone $productQuery)
-            ->with(['shop:id,name,slug,owner_id', 'type:id,name'])
-            ->latest()
-            ->paginate(min(max($request->integer('limit', 20), 1), 100));
-        [$dateFrom,$dateTo,$period]=$this->period($request);
-        $productIds = $products->getCollection()->pluck('id');
-        $productViews = ProductPromotionStatDaily::query()
+        $viewsSubquery = ProductPromotionStatDaily::query()
             ->where('seller_id', $seller->id)
-            ->whereIn('product_id', $productIds)
             ->whereBetween('date', [$dateFrom->toDateString(), $dateTo->toDateString()])
             ->selectRaw('product_id, SUM(views) as views')
-            ->groupBy('product_id')
-            ->pluck('views', 'product_id');
-        $productClicks = ProductPromotionVisit::query()
+            ->groupBy('product_id');
+        $paidClicksSubquery = ProductPromotionVisit::query()
             ->where('seller_id', $seller->id)
-            ->whereIn('product_id', $productIds)
             ->where('source', 'yandex')
             ->where('type', 'paid_click')
             ->whereBetween('created_at', [$dateFrom->copy()->startOfDay(), $dateTo->copy()->endOfDay()])
-            ->selectRaw('product_id, COUNT(*) as yandex_clicks')
-            ->groupBy('product_id')
-            ->pluck('yandex_clicks', 'product_id');
-        $products->getCollection()->transform(function ($product) use ($productViews, $productClicks) {
+            ->selectRaw('product_id, COUNT(*) as paid_clicks')
+            ->groupBy('product_id');
+
+        $productsQuery = (clone $productQuery)
+            ->leftJoinSub($viewsSubquery, 'promotion_views', fn ($join) => $join->on('products.id', '=', 'promotion_views.product_id'))
+            ->leftJoinSub($paidClicksSubquery, 'promotion_paid_clicks', fn ($join) => $join->on('products.id', '=', 'promotion_paid_clicks.product_id'))
+            ->select('products.*')
+            ->selectRaw('COALESCE(promotion_views.views, 0) as promotion_total_visits')
+            ->selectRaw('COALESCE(promotion_paid_clicks.paid_clicks, 0) as promotion_paid_visits')
+            ->selectRaw('GREATEST(COALESCE(promotion_views.views, 0) - COALESCE(promotion_paid_clicks.paid_clicks, 0), 0) as promotion_organic_visits')
+            ->with(['shop:id,name,slug,owner_id', 'type:id,name'])
+            ->when($sortBy === 'paid_visits', fn ($query) => $query->orderBy('promotion_paid_visits', $sortOrder))
+            ->when($sortBy === 'organic_visits', fn ($query) => $query->orderBy('promotion_organic_visits', $sortOrder))
+            ->when(!in_array($sortBy, ['paid_visits', 'organic_visits'], true), fn ($query) => $query->latest('products.created_at'))
+            ->orderBy('products.id', 'desc');
+
+        $products = $productsQuery->paginate(min(max($request->integer('limit', 20), 1), 100));
+        $products->getCollection()->transform(function ($product) {
             $serializedProduct = $product->toArray();
             $serializedProduct['promotion_stats'] = [
-                'views' => (int) ($productViews->get($product->id) ?? 0),
-                'yandex_clicks' => (int) ($productClicks->get($product->id) ?? 0),
+                'views' => (int) $product->promotion_total_visits,
+                'yandex_clicks' => (int) $product->promotion_paid_visits,
+                'organic_clicks' => (int) $product->promotion_organic_visits,
             ];
+            unset(
+                $serializedProduct['promotion_total_visits'],
+                $serializedProduct['promotion_paid_visits'],
+                $serializedProduct['promotion_organic_visits']
+            );
 
             return $serializedProduct;
         });
