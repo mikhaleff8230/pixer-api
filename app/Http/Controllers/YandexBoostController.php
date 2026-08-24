@@ -24,6 +24,7 @@ class YandexBoostController extends Controller
     {
         $data=$request->validate(['enabled'=>'required|boolean']); $user=$request->user();
         abort_unless((int)$product->shop?->owner_id===(int)$user->id||$user->hasPermissionTo('super_admin'),403,'Можно продвигать только собственный товар.');
+        abort_unless($product->status === 'publish' && (bool) $product->is_active, 422, 'Продвигать можно только опубликованный активный товар.');
         $settings=YandexDirectSetting::current(); abort_unless($settings->enabled,422,'Продвижение временно недоступно.');
         if($data['enabled']){ $balance=SellerBalance::getOrCreate($product->shop->owner_id); abort_if(DecimalMoney::cents((string)$balance->balance)<=DecimalMoney::cents((string)$settings->balance_reserve),422,'Недостаточно средств для продвижения.'); }
         $product->forceFill(['boost_enabled'=>$data['enabled'],'boost_status'=>$data['enabled']?'starting':'stopping','boost_started_at'=>$data['enabled']?now():$product->boost_started_at,'boost_stopped_at'=>$data['enabled']?null:now(),'boost_last_error'=>null])->save();
@@ -47,6 +48,8 @@ class YandexBoostController extends Controller
 
         $productQuery = Product::query()
             ->whereHas('shop', fn ($query) => $query->where('owner_id', $seller->id))
+            ->where('status', 'publish')
+            ->where('is_active', true)
             ->when($shopId, fn ($query) => $query->where('shop_id', $shopId))
             ->when($request->filled('search'), fn ($query) => $query->where('name', 'like', '%' . $request->string('search')->trim() . '%'));
 
@@ -115,8 +118,10 @@ class YandexBoostController extends Controller
         $products = Product::query()
             ->whereIn('id', $data['product_ids'])
             ->whereHas('shop', fn ($query) => $query->where('owner_id', $seller->id))
+            ->where('status', 'publish')
+            ->where('is_active', true)
             ->get();
-        abort_unless($products->count() === count($data['product_ids']), 403, 'Можно изменять только собственные товары.');
+        abort_unless($products->count() === count($data['product_ids']), 422, 'Продвигать можно только собственные опубликованные активные товары.');
 
         $settings = YandexDirectSetting::current();
         abort_unless($settings->enabled, 422, 'Продвижение временно недоступно.');
