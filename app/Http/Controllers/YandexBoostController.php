@@ -73,10 +73,10 @@ class YandexBoostController extends Controller
             ->groupBy('product_id')
             ->pluck('yandex_clicks', 'product_id');
         $products->getCollection()->transform(function ($product) use ($productViews, $productClicks) {
-            $product->promotion_stats = [
+            $product->setRelation('promotion_stats', [
                 'views' => (int) ($productViews->get($product->id) ?? 0),
                 'yandex_clicks' => (int) ($productClicks->get($product->id) ?? 0),
-            ];
+            ]);
 
             return $product;
         });
