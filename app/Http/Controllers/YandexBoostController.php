@@ -73,12 +73,13 @@ class YandexBoostController extends Controller
             ->groupBy('product_id')
             ->pluck('yandex_clicks', 'product_id');
         $products->getCollection()->transform(function ($product) use ($productViews, $productClicks) {
-            $product->setRelation('promotion_stats', [
+            $serializedProduct = $product->toArray();
+            $serializedProduct['promotion_stats'] = [
                 'views' => (int) ($productViews->get($product->id) ?? 0),
                 'yandex_clicks' => (int) ($productClicks->get($product->id) ?? 0),
-            ]);
+            ];
 
-            return $product;
+            return $serializedProduct;
         });
         $stats=SellerAdStatDaily::where('seller_id',$seller->id)->whereBetween('date',[$dateFrom,$dateTo]);
         $settings=YandexDirectSetting::current();$group=SellerYandexAdGroup::where('seller_id',$seller->id)->where('campaign_id',$settings->campaign_id)->first();
