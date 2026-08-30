@@ -220,6 +220,7 @@ class UserController extends CoreController
 
     public function register(UserCreateRequest $request)
     {
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($request) {
         $notAllowedPermissions = [Permission::SUPER_ADMIN];
         if ((isset($request->permission->value) && in_array($request->permission->value, $notAllowedPermissions)) || (isset($request->permission) && in_array($request->permission, $notAllowedPermissions))) {
             throw new AuthorizationException(NOT_AUTHORIZED);
@@ -236,6 +237,7 @@ class UserController extends CoreController
         ]);
 
         $user->givePermissionTo($permissions);
+        app(\App\Services\SellerOnboardingService::class)->ensure($user, (array) $request->input('attribution', []), true);
         
         // Создаем профиль с автоматически сгенерированным seller_id, если профиля еще нет
         if (!$user->profile) {
@@ -254,6 +256,7 @@ class UserController extends CoreController
         }
         $this->markUserLoggedIn($user);
         return ["token" => $user->createToken('auth_token')->plainTextToken, "permissions" => $user->getPermissionNames()];
+        }, 3);
     }
 
     public function banUser(Request $request)
@@ -566,6 +569,7 @@ class UserController extends CoreController
 
         try {
             if ($this->verifyOtp($request)) {
+                return DB::transaction(function () use ($request, $phoneNumber) {
                 // check if phone number exist
                 $profile = $this->findProfileByPhone($phoneNumber);
                 $user = '';
@@ -656,6 +660,7 @@ class UserController extends CoreController
                             $user->markEmailAsVerified();
                         }
                         if (empty($userExist)) {
+                            app(\App\Services\SellerOnboardingService::class)->ensure($user, (array) $request->input('attribution', []), true);
                             $this->giveSignupPointsToCustomer($user->id);
                             event(new UserRegistered($user, $request->permission === Permission::STORE_OWNER ? Permission::STORE_OWNER : Permission::CUSTOMER));
                         }
@@ -711,6 +716,7 @@ class UserController extends CoreController
                     "token" => $user->createToken('auth_token')->plainTextToken,
                     "permissions" => $user->getPermissionNames()
                 ];
+                }, 3);
             }
             return ['message' => OTP_VERIFICATION_FAILED, 'success' => false];
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -832,6 +838,7 @@ class UserController extends CoreController
 
     protected function markUserLoggedIn(User $user): void
     {
+        app(\App\Services\SellerOnboardingService::class)->ensure($user, (array) request()->input('attribution', []));
         $user->forceFill(['last_login_at' => now()])->saveQuietly();
     }
 

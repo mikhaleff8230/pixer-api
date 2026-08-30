@@ -2,6 +2,18 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+Route::middleware(['auth:sanctum', 'throttle:120,1'])->prefix('seller/onboarding')->group(function () {
+    $controller = \App\Http\Controllers\SellerOnboardingController::class;
+    Route::get('/', [$controller, 'show']);
+    Route::patch('/shop', [$controller, 'shop']);
+    Route::patch('/draft', [$controller, 'draft']);
+    Route::post('/photo', [$controller, 'photo']);
+    Route::post('/product', [$controller, 'product'])->middleware('email.verified');
+    Route::post('/skip', [$controller, 'skip']);
+    Route::post('/resume', [$controller, 'resume']);
+    Route::post('/events/claim', [$controller, 'claimEvents']);
+});
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;

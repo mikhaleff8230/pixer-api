@@ -165,7 +165,7 @@ class ProductUpdateRequest extends FormRequest
             'unit'                         => ['string'],
             'description'                  => ['nullable', 'string'],
             'quantity'                     => ['nullable', 'integer'],
-            'sku'                          => ['string', Rule::unique('variation_options')->where(fn ($query) => $query->whereSku($this->sku))],
+            'sku'                          => ['nullable', 'string', Rule::unique('variation_options')->where(fn ($query) => $query->whereSku($this->sku))],
             'image'                        => ['array'],
             'gallery'                      => ['array'],
             'video'                        => ['nullable', 'sometimes', 'file', 'mimes:mp4,mpeg,mov,avi,wmv,webm,ogv', 'max:40960'], // 40MB максимум

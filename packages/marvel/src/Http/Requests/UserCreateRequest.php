@@ -10,6 +10,12 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UserCreateRequest extends FormRequest
 {
+    protected function prepareForValidation()
+    {
+        if ($this->route()?->getActionMethod() === 'register' && $this->input('permission') === 'store_owner' && !$this->filled('name')) {
+            $this->merge(['name' => mb_substr(explode('@', (string) $this->input('email'))[0], 0, 255)]);
+        }
+    }
     /**
      * Determine if the user is authorized to make this request.
      *

@@ -2,6 +2,10 @@
 
 return [
 
+    // PermissionMiddleware uses Gate::canAny; register Spatie's permission checks.
+    // This package replaces the vendor config, so its default must be explicit.
+    'register_permission_check_method' => true,
+
     'models' => [
 
         /*

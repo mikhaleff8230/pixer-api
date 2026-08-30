@@ -156,6 +156,8 @@ class YandexAuthController extends CoreController
 
             // Авторизуем пользователя через web guard (для бекенда / Blade, если используется)
             Auth::guard('web')->login($user, true);
+            // Preserve OAuth itself, but repair an existing seller's missing shop before returning.
+            app(\App\Services\SellerOnboardingService::class)->ensure($user);
 
             // Создаем API-токен для SPA (Marvel shop)
             $token = $user->createToken('auth_token')->plainTextToken;
@@ -253,4 +255,3 @@ class YandexAuthController extends CoreController
         ]);
     }
 }
-

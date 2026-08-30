@@ -39,6 +39,7 @@ class ProductRepository extends BaseRepository
      * @var array
      */
     protected $fieldSearchable = [
+        'moderation_status',
         'name'        => 'like',
         'shop_id',
         'status',

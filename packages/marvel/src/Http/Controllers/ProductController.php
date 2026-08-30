@@ -993,6 +993,14 @@ class ProductController extends CoreController
             if (!$product) {
                 throw new MarvelNotFoundException();
             }
+            // Only the new onboarding products use the separate moderation/visibility policy.
+            // Hide their private drafts/rejections from public detail URLs as well as the feed.
+            if ($product->moderation_status !== null && ($product->status !== 'publish' || !$product->is_active || !$product->shop?->is_active)) {
+                $viewer = $user ?: auth('sanctum')->user();
+                if (!$viewer || (!$viewer->hasPermissionTo(Permission::SUPER_ADMIN) && (int) $product->shop?->owner_id !== (int) $viewer->id)) {
+                    throw new MarvelNotFoundException();
+                }
+            }
             
             
             // Загружаем связи безопасно
@@ -1338,6 +1346,9 @@ class ProductController extends CoreController
         try {
             $product = $this->repository->findOrFail($id);
             // Используем shop_id из товара, если он не передан в запросе
+            if ($product->moderation_status !== null && !$this->repository->hasPermission($request->user(), $product->shop_id)) {
+                throw new AuthorizationException(NOT_AUTHORIZED);
+            }
             $shopId = $request->shop_id ?? $product->shop_id;
             
             if (!$shopId) {

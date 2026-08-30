@@ -40,5 +40,6 @@ class AppServiceProvider extends ServiceProvider
     public function boot()
     {
         Schema::defaultStringLength(191);
+        \Marvel\Database\Models\Product::observe(\App\Observers\OnboardingProductObserver::class);
     }
 }

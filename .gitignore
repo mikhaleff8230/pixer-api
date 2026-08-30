@@ -6,6 +6,9 @@
 /storage/framework/sessions/*
 /storage/framework/views/*
 /storage/debugbar
+/storage/app/public/
+/storage/framework/testing/
+/storage/media-library/temp/
 /storage/logs/*.log
 /vendor
 .env
