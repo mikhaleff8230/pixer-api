@@ -47,7 +47,7 @@ class SyncSellerYandexBoostJob implements ShouldQueue, ShouldBeUnique
                 if ($group->pause_reason === 'admin' || ($group->pause_reason === 'api_error' && !$this->allowApiErrorRecovery)) return;
                 if (!$seller || !$seller->is_active) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'seller_blocked','last_sync_at'=>now()]); return; }
                 if (!$ids) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'no_boost_products','boost_filter_hash'=>null,'last_sync_at'=>now(),'last_error'=>null]); return; }
-                if (DecimalMoney::cents((string)$balance->balance)<=DecimalMoney::cents((string)$settings->balance_reserve)) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'insufficient_balance','last_sync_at'=>now()]); return; }
+                if (DecimalMoney::cents((string)$balance->balance)<DecimalMoney::cents((string)$settings->balance_reserve)) { if($group->shopping_ad_id)$direct->pauseShoppingAd((int)$group->shopping_ad_id); $group->update(['status'=>'paused','pause_reason'=>'insufficient_balance','last_sync_at'=>now()]); return; }
                 if (!$group->ad_group_id) $group->ad_group_id=$direct->createSellerAdGroup($this->sellerId);
                 if(!$group->bid_level)$group->bid_level=$settings->default_bid_level;
                 if (!$group->shopping_ad_id) $group->shopping_ad_id=$direct->createShoppingAd((int)$group->ad_group_id,$ids);

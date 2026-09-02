@@ -26,7 +26,7 @@ class YandexBoostController extends Controller
         abort_unless((int)$product->shop?->owner_id===(int)$user->id||$user->hasPermissionTo('super_admin'),403,'Можно продвигать только собственный товар.');
         abort_unless($product->status === 'publish' && (bool) $product->is_active, 422, 'Продвигать можно только опубликованный активный товар.');
         $settings=YandexDirectSetting::current(); abort_unless($settings->enabled,422,'Продвижение временно недоступно.');
-        if($data['enabled']){ $balance=SellerBalance::getOrCreate($product->shop->owner_id); abort_if(DecimalMoney::cents((string)$balance->balance)<=DecimalMoney::cents((string)$settings->balance_reserve),422,'Недостаточно средств для продвижения.'); }
+        if($data['enabled']){ $balance=SellerBalance::getOrCreate($product->shop->owner_id); abort_if(DecimalMoney::cents((string)$balance->balance)<DecimalMoney::cents((string)$settings->balance_reserve),422,'Недостаточно средств для продвижения.'); }
         $product->forceFill(['boost_enabled'=>$data['enabled'],'boost_status'=>$data['enabled']?'starting':'stopping','boost_started_at'=>$data['enabled']?now():$product->boost_started_at,'boost_stopped_at'=>$data['enabled']?null:now(),'boost_last_error'=>null])->save();
         SyncSellerYandexBoostJob::dispatchAfterResponse((int)$product->shop->owner_id);
         return ['success'=>true,'boost_enabled'=>(bool)$product->boost_enabled,'boost_status'=>$product->boost_status];
@@ -127,7 +127,7 @@ class YandexBoostController extends Controller
         abort_unless($settings->enabled, 422, 'Продвижение временно недоступно.');
         if ($data['enabled']) {
             $balance = SellerBalance::getOrCreate($seller->id);
-            abort_if(DecimalMoney::cents((string) $balance->balance) <= DecimalMoney::cents((string) $settings->balance_reserve), 422, 'Недостаточно средств для продвижения.');
+            abort_if(DecimalMoney::cents((string) $balance->balance) < DecimalMoney::cents((string) $settings->balance_reserve), 422, 'Недостаточно средств для продвижения.');
         }
 
         $updates = [
