@@ -28,7 +28,7 @@ class YandexDirectBillingService
             $transaction=SellerBalanceTransaction::create(['seller_id'=>$locked->seller_id,'type'=>'yandex_promotion','amount'=>'-'.DecimalMoney::decimal($charge),'balance_before'=>DecimalMoney::decimal($before),'balance_after'=>DecimalMoney::decimal($after),'description'=>'Продвижение товаров']);
             $entry->update(['balance_transaction_id'=>$transaction->id,'status'=>'charged']);$locked->update(['last_yandex_cost'=>DecimalMoney::decimal($newCents),'last_sync_at'=>$syncedAt]);
             $seller=$locked->seller;$seller?->forceFill(['seller_balance'=>DecimalMoney::decimal($after)])->save();
-            if($after<=DecimalMoney::cents((string)$settings->balance_reserve))SyncSellerYandexBoostJob::dispatch($locked->seller_id)->afterCommit();
+            if($after<DecimalMoney::cents((string)$settings->balance_reserve))SyncSellerYandexBoostJob::dispatch($locked->seller_id)->afterCommit();
             return $entry;
         });
     }
