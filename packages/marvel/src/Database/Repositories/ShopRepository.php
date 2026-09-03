@@ -62,6 +62,7 @@ class ShopRepository extends BaseRepository
     {
         try {
             $data = $request->only($this->dataArray);
+            $data = $this->sanitizeSocials($data);
             $data['slug'] = $this->makeSlug($request);
             $data['owner_id'] = $request->user()->id;
             $shop = $this->create($data);
@@ -100,6 +101,7 @@ class ShopRepository extends BaseRepository
                 }
             }
             $data = $request->only($this->dataArray);
+            $data = $this->sanitizeSocials($data);
             if (!empty($request->slug) &&  $request->slug != $shop['slug']) {
                 $data['slug'] = $this->makeSlug($request);
             }
@@ -121,5 +123,43 @@ class ShopRepository extends BaseRepository
             $balance['shop_id'] = $shop_id;
             Balance::create($balance);
         }
+    }
+
+    private function sanitizeSocials(array $data): array
+    {
+        if (
+            !isset($data['settings']) ||
+            !is_array($data['settings']) ||
+            !array_key_exists('socials', $data['settings'])
+        ) {
+            return $data;
+        }
+
+        $socials = is_array($data['settings']['socials'])
+            ? $data['settings']['socials']
+            : [];
+
+        $data['settings']['socials'] = array_values(array_filter(array_map(
+            static function ($social) {
+                if (!is_array($social)) {
+                    return null;
+                }
+
+                $icon = trim((string) ($social['icon'] ?? ''));
+                $url = trim((string) ($social['url'] ?? ''));
+
+                if ($icon === '' || $url === '') {
+                    return null;
+                }
+
+                return [
+                    'icon' => $icon,
+                    'url' => $url,
+                ];
+            },
+            $socials
+        )));
+
+        return $data;
     }
 }
