@@ -5,10 +5,13 @@ namespace Marvel\Database\Repositories;
 
 use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Marvel\Database\Models\Availability;
 use Marvel\Database\Models\Product;
+use Marvel\Database\Models\ProductVideo;
 use Marvel\Database\Models\GeoPoint;
 use Marvel\Database\Models\Resource;
 use Marvel\Database\Models\Tag;
@@ -34,6 +37,20 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ProductRepository extends BaseRepository
 {
+    private const MAX_PRODUCT_VIDEO_SIZE = 50 * 1024 * 1024;
+
+    private const PRODUCT_VIDEO_MIME_EXTENSIONS = [
+        'video/mp4' => 'mp4',
+        'application/mp4' => 'mp4',
+        'video/webm' => 'webm',
+        'video/quicktime' => 'mov',
+        'video/mpeg' => 'mpg',
+        'video/x-msvideo' => 'avi',
+        'video/avi' => 'avi',
+        'video/x-ms-wmv' => 'wmv',
+        'video/ogg' => 'ogv',
+        'application/ogg' => 'ogv',
+    ];
 
     /**
      * @var array
@@ -128,6 +145,108 @@ class ProductRepository extends BaseRepository
     public function model()
     {
         return Product::class;
+    }
+
+    protected function appendVideoCoverAttributes(Product $product): Product
+    {
+        try {
+            $product->load('videos');
+            $videoAsCover = filter_var(
+                $product->getMeta('video_as_cover'),
+                FILTER_VALIDATE_BOOLEAN
+            );
+            $coverVideoId = $product->getMeta('cover_video_id');
+            $coverVideo = null;
+
+            if ($videoAsCover && $product->videos->isNotEmpty()) {
+                $coverVideo = $coverVideoId
+                    ? $product->videos->firstWhere('id', (int) $coverVideoId)
+                    : null;
+                $coverVideo = $coverVideo ?: $product->videos->first();
+            }
+
+            $product->setAttribute('has_video_as_cover', (bool) $coverVideo);
+            $product->setAttribute('video_as_cover', (bool) $coverVideo);
+            $product->setAttribute('cover_video_id', $coverVideo?->id);
+            $product->setAttribute('cover_video', $coverVideo);
+        } catch (\Throwable $e) {
+            $product->setAttribute('has_video_as_cover', false);
+            $product->setAttribute('video_as_cover', false);
+            $product->setAttribute('cover_video_id', null);
+            $product->setAttribute('cover_video', null);
+            Log::warning('ProductRepository - failed to append video cover data', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $product;
+    }
+
+    protected function bumpProductCatalogCacheVersion(): void
+    {
+        try {
+            $key = 'products_catalog_version';
+            if (!\Cache::has($key)) {
+                \Cache::forever($key, 1);
+            }
+            \Cache::increment($key);
+        } catch (\Throwable $e) {
+            Log::warning('ProductRepository - failed to invalidate product catalog cache', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    protected function storeUploadedProductVideo(Product $product, UploadedFile $file): ProductVideo
+    {
+        if (!$file->isValid()) {
+            throw new HttpException(422, 'Не удалось прочитать загруженное видео.');
+        }
+
+        $fileSize = (int) $file->getSize();
+        if ($fileSize <= 0 || $fileSize > self::MAX_PRODUCT_VIDEO_SIZE) {
+            throw new HttpException(422, 'Размер видео не должен превышать 50 МБ.');
+        }
+
+        $mimeType = strtolower((string) $file->getMimeType());
+        $extension = self::PRODUCT_VIDEO_MIME_EXTENSIONS[$mimeType] ?? null;
+        if (!$extension) {
+            throw new HttpException(422, 'Разрешены только поддерживаемые видеофайлы.');
+        }
+
+        // Имя клиента не используется в S3-ключе: расширение берётся из проверенного MIME.
+        $key = 'products/videos/' . Str::uuid()->toString() . '.' . $extension;
+        $stream = fopen($file->getRealPath(), 'rb');
+        if ($stream === false) {
+            throw new \RuntimeException('Failed to open uploaded video stream.');
+        }
+
+        try {
+            $stored = Storage::disk('s3')->put($key, $stream, [
+                'visibility' => 'public',
+                'CacheControl' => 'public, max-age=86400',
+                'ContentType' => $mimeType,
+            ]);
+        } finally {
+            fclose($stream);
+        }
+
+        if (!$stored || !Storage::disk('s3')->exists($key)) {
+            throw new \RuntimeException('Failed to persist uploaded video in storage.');
+        }
+
+        try {
+            return ProductVideo::create([
+                'product_id' => $product->id,
+                'url' => $key,
+                'file_size' => $fileSize,
+                'mime_type' => $mimeType,
+            ]);
+        } catch (\Throwable $e) {
+            Storage::disk('s3')->delete($key);
+            throw $e;
+        }
     }
 
     /**
@@ -357,6 +476,8 @@ class ProductRepository extends BaseRepository
             ]);
             
             $data = $request->only($this->dataArray);
+            // UploadedFile хранится в product_videos, а не в legacy JSON-колонке products.video.
+            unset($data['video']);
             
             // Используем единый сервис для генерации slug и кода
             $slugText = isset($request['slug']) && $request['slug'] ? $request['slug'] : $request['name'];
@@ -711,60 +832,41 @@ class ProductRepository extends BaseRepository
                ]);
                
                if ($request->hasFile('video')) {
-                   $file = $request->file('video');
-                Log::info('ProductRepository::storeProduct - сохраняем видео', [
-                    'file_name' => $file->getClientOriginalName(),
-                    'file_size' => $file->getSize(),
-                    'mime_type' => $file->getMimeType(),
-                ]);
-                
-                // Проверяем размер файла (40MB максимум)
-                $maxSize = 40 * 1024 * 1024; // 40MB
-                if ($file->getSize() > $maxSize) {
-                    throw new \Exception('Video file size exceeds maximum allowed size of 40MB');
-                }
-                
-                $key = 'products/videos/' . uniqid('', true) . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
-                Storage::disk('s3')->put($key, file_get_contents($file->getRealPath()), [
-                    'visibility' => 'public',
-                    'CacheControl' => 'public, max-age=86400',
-                    'ContentType' => $file->getMimeType() ?: 'video/mp4',
-                ]);
-                
-                $videoRecord = \Marvel\Database\Models\ProductVideo::create([
-                    'product_id' => $product->id,
-                    'url' => $key,
-                    'file_size' => $file->getSize(),
-                    'mime_type' => $file->getMimeType(),
-                ]);
-                
-                Log::info('ProductRepository::storeProduct - видео сохранено в БД', [
-                    'video_id' => $videoRecord->id,
-                    'product_id' => $product->id,
-                    'video_url' => $videoRecord->url,
-                    's3_key' => $key,
-                    'video_exists_in_db' => \Marvel\Database\Models\ProductVideo::where('id', $videoRecord->id)->exists(),
-                ]);
-                
-                // Оптимизируем видео в фоне (можно через очередь)
+                $file = $request->file('video');
+                $videoRecord = null;
+
                 try {
-                    \Marvel\Helpers\VideoOptimizer::optimizeVideo($videoRecord, $file->getRealPath());
-                } catch (\Exception $e) {
-                    Log::error('ProductRepository::storeProduct - ошибка оптимизации видео', [
-                        'video_id' => $videoRecord->id,
+                    $videoRecord = $this->storeUploadedProductVideo($product, $file);
+                } catch (HttpException $e) {
+                    throw $e;
+                } catch (\Throwable $e) {
+                    // Товар и фотографии уже сохранены: ошибка S3 не должна ломать созданный товар.
+                    Log::error('ProductRepository::storeProduct - ошибка загрузки видео', [
+                        'product_id' => $product->id,
                         'error' => $e->getMessage(),
                     ]);
+                    $product->setAttribute(
+                        'video_upload_error',
+                        'Товар сохранён, но видео загрузить не удалось. Повторите загрузку в редакторе.'
+                    );
                 }
-                
-                // Если установлена галочка "Сделать обложкой", используем превью как первое изображение
-                if ($request->has('video_as_cover') && $request->input('video_as_cover')) {
-                    // Сохраняем флаг, что нужно использовать превью
-                    $product->setMeta('video_as_cover', true);
-                    $product->setMeta('cover_video_id', $videoRecord->id);
-                } else {
-                    // Если галочка не установлена, удаляем флаг
-                    $product->removeMeta('video_as_cover');
-                    $product->removeMeta('cover_video_id');
+
+                if ($videoRecord) {
+                    Log::info('ProductRepository::storeProduct - видео сохранено в БД', [
+                        'video_id' => $videoRecord->id,
+                        'product_id' => $product->id,
+                    ]);
+
+                    // FFmpeg создаёт web-preview, poster и thumbnail. Оригинал остаётся fallback.
+                    \Marvel\Helpers\VideoOptimizer::optimizeVideo($videoRecord, $file->getRealPath());
+
+                    if ($request->boolean('video_as_cover')) {
+                        $product->setMeta('video_as_cover', true);
+                        $product->setMeta('cover_video_id', $videoRecord->id);
+                    } else {
+                        $product->removeMeta('video_as_cover');
+                        $product->removeMeta('cover_video_id');
+                    }
                 }
             } elseif ($request->has('video_as_cover')) {
                 // Если видео не загружается, но есть флаг, обрабатываем его
@@ -802,6 +904,7 @@ class ProductRepository extends BaseRepository
                     'product_id' => $product->id,
                 ]);
             }
+            $this->appendVideoCoverAttributes($product);
             
             // Загружаем связи для финальной проверки
             $product->load('variations', 'variation_options');
@@ -833,6 +936,8 @@ class ProductRepository extends BaseRepository
             event(new ProductCreated($product));
             
             Log::info('=== ProductRepository::storeProduct - END (SUCCESS) ===');
+            $this->bumpProductCatalogCacheVersion();
+
             return $product;
         } catch (Exception $e) {
             throw $e;
@@ -1199,6 +1304,7 @@ class ProductRepository extends BaseRepository
                 ]);
             }
             $data = $request->only($this->dataArray);
+            unset($data['video']);
             $data['sale_price'] = isset($request['sale_price']) ? $request['sale_price'] : null;
             
             // ВАЖНО: type_id должен быть обязательным для всех товаров
@@ -1419,100 +1525,20 @@ class ProductRepository extends BaseRepository
             
             if ($request->hasFile('video')) {
                 try {
-                    // Удаляем старые видео
-                    $product->videos()->delete();
+                    // Старое видео удаляем только после успешной загрузки нового.
+                    // Иначе сбой S3/БД оставит товар без видео.
+                    $previousVideos = $product->videos()->get();
                     
                     $file = $request->file('video');
-                    Log::info('ProductRepository::updateProduct - сохраняем видео', [
-                        'file_name' => $file->getClientOriginalName(),
-                        'file_size' => $file->getSize(),
-                        'mime_type' => $file->getMimeType(),
+                    $videoRecord = $this->storeUploadedProductVideo($product, $file);
+
+                    Log::info('ProductRepository::updateProduct - видео сохранено в БД', [
+                        'video_id' => $videoRecord->id,
                         'product_id' => $product->id,
                     ]);
                     
-                    // Проверяем размер файла (40MB максимум)
-                    $maxSize = 40 * 1024 * 1024; // 40MB
-                    if ($file->getSize() > $maxSize) {
-                        throw new \Exception('Video file size exceeds maximum allowed size of 40MB');
-                    }
-                    
-                    $key = 'products/videos/' . uniqid('', true) . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
-                    
-                    // Загружаем в S3
-                    try {
-                        $fileContents = file_get_contents($file->getRealPath());
-                        $fileSize = strlen($fileContents);
-                        
-                        Log::info('ProductRepository::updateProduct - загружаем видео в S3', [
-                            's3_key' => $key,
-                            'file_size' => $fileSize,
-                            'file_path' => $file->getRealPath(),
-                            'file_exists' => file_exists($file->getRealPath()),
-                        ]);
-                        
-                        $result = Storage::disk('s3')->put($key, $fileContents, [
-                            'visibility' => 'public',
-                            'CacheControl' => 'public, max-age=86400',
-                            'ContentType' => $file->getMimeType() ?: 'video/mp4',
-                        ]);
-                        
-                        // Проверяем, что файл действительно загружен
-                        $existsInS3 = Storage::disk('s3')->exists($key);
-                        
-                        Log::info('ProductRepository::updateProduct - видео загружено в S3', [
-                            's3_key' => $key,
-                            'upload_result' => $result,
-                            'exists_in_s3' => $existsInS3,
-                            's3_url' => Storage::disk('s3')->url($key),
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error('ProductRepository::updateProduct - ошибка загрузки видео в S3', [
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
-                        ]);
-                        throw new \Exception('Failed to upload video to S3: ' . $e->getMessage());
-                    }
-                    
-                    // Создаем запись в БД
-                    try {
-                        $videoRecord = \Marvel\Database\Models\ProductVideo::create([
-                            'product_id' => $product->id,
-                            'url' => $key,
-                            'file_size' => $file->getSize(),
-                            'mime_type' => $file->getMimeType(),
-                        ]);
-                        
-                        Log::info('ProductRepository::updateProduct - видео сохранено в БД', [
-                            'video_id' => $videoRecord->id,
-                            'product_id' => $product->id,
-                            'video_url' => $videoRecord->url,
-                            's3_key' => $key,
-                            'video_exists_in_db' => \Marvel\Database\Models\ProductVideo::where('id', $videoRecord->id)->exists(),
-                            'product_videos_count' => \Marvel\Database\Models\ProductVideo::where('product_id', $product->id)->count(),
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error('ProductRepository::updateProduct - ошибка создания записи видео в БД', [
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
-                        ]);
-                        // Пытаемся удалить файл из S3, если запись в БД не создалась
-                        try {
-                            Storage::disk('s3')->delete($key);
-                        } catch (\Exception $deleteException) {
-                            Log::error('ProductRepository::updateProduct - ошибка удаления файла из S3', [
-                                'error' => $deleteException->getMessage(),
-                            ]);
-                        }
-                        throw new \Exception('Failed to create video record in database: ' . $e->getMessage());
-                    }
-                    
                     // Обрабатываем флаг video_as_cover (правильно обрабатываем строку '1' как boolean)
-                    $videoAsCover = false;
-                    if ($request->has('video_as_cover')) {
-                        $videoAsCoverValue = $request->input('video_as_cover');
-                        // Обрабатываем строку '1', 'true', boolean true и т.д.
-                        $videoAsCover = in_array($videoAsCoverValue, ['1', 'true', true, 1], true);
-                    }
+                    $videoAsCover = $request->boolean('video_as_cover');
                     
                     // Устанавливаем мета-данные ДО оптимизации
                     if ($videoAsCover) {
@@ -1523,44 +1549,9 @@ class ProductRepository extends BaseRepository
                         $product->removeMeta('cover_video_id');
                     }
                     
-                    // Оптимизируем видео (может занять время, но не должно блокировать сохранение)
+                    // Оптимизируем видео; даже при сбое FFmpeg оригинал остаётся доступен.
                     try {
-                        $optimizationResult = \Marvel\Helpers\VideoOptimizer::optimizeVideo($videoRecord, $file->getRealPath());
-                        
-                        // Если установлена галочка "Сделать обложкой" и оптимизация прошла успешно
-                        if ($videoAsCover && $optimizationResult) {
-                            // Обновляем превью видео после оптимизации
-                            $videoRecord->refresh();
-                            if ($videoRecord->poster_url) {
-                                // Используем постер видео как первое изображение
-                                $currentImage = $product->image;
-                                $currentGallery = $product->gallery ?? [];
-                                
-                                // Если image - массив, берем первый элемент
-                                if (is_array($currentImage)) {
-                                    $firstImage = $currentImage[0] ?? null;
-                                } else {
-                                    $firstImage = $currentImage;
-                                }
-                                
-                                // Создаем новую структуру изображений с постером видео первым
-                                $newImage = [
-                                    'thumbnail' => $videoRecord->poster_url,
-                                    'original' => $videoRecord->poster_url,
-                                    'id' => null,
-                                ];
-                                
-                                // Если есть существующее изображение, добавляем его в gallery
-                                if ($firstImage) {
-                                    $newGallery = array_merge([$newImage], [$firstImage], $currentGallery);
-                                } else {
-                                    $newGallery = array_merge([$newImage], $currentGallery);
-                                }
-                                
-                                $data['image'] = $newImage;
-                                $data['gallery'] = $newGallery;
-                            }
-                        }
+                        \Marvel\Helpers\VideoOptimizer::optimizeVideo($videoRecord, $file->getRealPath());
                     } catch (\Exception $e) {
                         Log::error('ProductRepository::updateProduct - ошибка оптимизации видео', [
                             'video_id' => $videoRecord->id ?? 'unknown',
@@ -1568,6 +1559,12 @@ class ProductRepository extends BaseRepository
                             'trace' => $e->getTraceAsString(),
                         ]);
                         // Не прерываем обновление товара из-за ошибки оптимизации видео
+                    }
+
+                    foreach ($previousVideos as $previousVideo) {
+                        if ($previousVideo->id !== $videoRecord->id) {
+                            $previousVideo->delete();
+                        }
                     }
                 } catch (\Exception $e) {
                     Log::error('ProductRepository::updateProduct - критическая ошибка при загрузке видео', [
@@ -1577,6 +1574,10 @@ class ProductRepository extends BaseRepository
                     ]);
                     throw $e; // Пробрасываем исключение дальше
                 }
+            } elseif ($request->boolean('remove_video')) {
+                $product->videos()->get()->each->delete();
+                $product->removeMeta('video_as_cover');
+                $product->removeMeta('cover_video_id');
             } elseif ($request->has('existing_video')) {
                 // Сохраняем существующее видео
                 $product->videos()->delete();
@@ -1688,8 +1689,9 @@ class ProductRepository extends BaseRepository
             Log::warning('ProductRepository::updateProduct - не удалось загрузить videos', [
                 'error' => $e->getMessage(),
                 'product_id' => $product->id,
-            ]);
+                ]);
         }
+        $this->appendVideoCoverAttributes($product);
         // Для админки в ответе после update нужен URL цифрового файла.
         try {
             $product->load('digital_file');
@@ -1705,6 +1707,8 @@ class ProductRepository extends BaseRepository
 
         $this->syncDigitalLicenseKeysFromRequest($product->fresh(), $request);
         $this->syncProductCourse($product->fresh(), $request);
+
+        $this->bumpProductCatalogCacheVersion();
 
         return $product;
     }

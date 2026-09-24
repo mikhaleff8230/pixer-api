@@ -29,6 +29,7 @@ class ProductVideo extends Model
 
     protected $appends = [
         'video_url',
+        'status',
     ];
 
     public function product()
@@ -103,6 +104,11 @@ class ProductVideo extends Model
         return $this->buildFullUrl($url);
     }
 
+    public function getStatusAttribute()
+    {
+        return !empty($this->attributes['url']) ? 'ready' : 'error';
+    }
+
     /**
      * Проверить, есть ли оптимизированные версии
      */
@@ -173,12 +179,12 @@ class ProductVideo extends Model
         parent::boot();
 
         static::deleting(function ($video) {
-            // Удаляем файлы с диска
+            // Accessor'ы возвращают публичные URL, а Storage ожидает S3-ключи.
             $files = [
-                $video->url,
-                $video->preview_url,
-                $video->poster_url,
-                $video->thumbnail_url,
+                $video->getRawOriginal('url'),
+                $video->getRawOriginal('preview_url'),
+                $video->getRawOriginal('poster_url'),
+                $video->getRawOriginal('thumbnail_url'),
             ];
 
             foreach ($files as $file) {
@@ -196,5 +202,3 @@ class ProductVideo extends Model
         });
     }
 }
-
-

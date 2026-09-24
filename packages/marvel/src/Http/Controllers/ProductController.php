@@ -385,7 +385,55 @@ class ProductController extends CoreController
             }
         }
         
-        return $result;
+        return $this->appendVideoCoverData($result);
+    }
+
+    private function appendVideoCoverData($products)
+    {
+        try {
+            if (!class_exists(\Marvel\Database\Models\ProductVideo::class) || !Schema::hasTable('product_videos')) {
+                return $products;
+            }
+
+            $collection = method_exists($products, 'getCollection')
+                ? $products->getCollection()
+                : $products;
+
+            if (!$collection instanceof \Illuminate\Support\Collection) {
+                return $products;
+            }
+
+            if (method_exists($collection, 'loadMissing')) {
+                $collection->loadMissing('videos');
+            }
+
+            $collection->each(function ($product) {
+                $videoAsCover = filter_var(
+                    $product->getMeta('video_as_cover'),
+                    FILTER_VALIDATE_BOOLEAN
+                );
+                $coverVideoId = $product->getMeta('cover_video_id');
+                $coverVideo = null;
+
+                if ($videoAsCover && $product->videos && $product->videos->isNotEmpty()) {
+                    $coverVideo = $coverVideoId
+                        ? $product->videos->firstWhere('id', (int) $coverVideoId)
+                        : null;
+                    $coverVideo = $coverVideo ?: $product->videos->first();
+                }
+
+                $product->setAttribute('has_video_as_cover', (bool) $coverVideo);
+                $product->setAttribute('video_as_cover', (bool) $coverVideo);
+                $product->setAttribute('cover_video_id', $coverVideo?->id);
+                $product->setAttribute('cover_video', $coverVideo);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning('ProductController - failed to append video cover data', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $products;
     }
 
     /**
@@ -408,6 +456,13 @@ class ProductController extends CoreController
             'language' => $language
         ]);
         
+        $catalogVersion = 1;
+        try {
+            $catalogVersion = (int) \Cache::get('products_catalog_version', 1);
+        } catch (\Throwable $e) {
+            // Каталог должен работать и при временно недоступном cache store.
+        }
+
         // Создаем ключ кэша на основе параметров запроса
         $cacheKey = 'products_dynamic_' . md5(serialize([
             'language' => $language,
@@ -422,6 +477,7 @@ class ProductController extends CoreController
             'orderBy' => $request->orderBy,
             'sortedBy' => $request->sortedBy,
             'attribute_values' => $request->attribute_values,
+            'catalog_version' => $catalogVersion,
         ]));
 
         $fetchProducts = function () use ($request, $limit, $categorySlugs, $language) {
@@ -468,44 +524,7 @@ class ProductController extends CoreController
                 $result = $query->with($withRelations)->paginate($limit);
                 
                 if ($canLoadVideos) {
-                    $result->getCollection()->transform(function ($product) {
-                        $hasVideoAsCover = false;
-                        $coverVideo = null;
-                        
-                        if (!$product->relationLoaded('videos')) {
-                            try {
-                                $product->load('videos');
-                            } catch (\Exception $e) {
-                            }
-                        }
-                        
-                        if ($product->videos && $product->videos->count() > 0) {
-                            try {
-                                $videoAsCover = $product->getMeta('video_as_cover');
-                                $coverVideoId = $product->getMeta('cover_video_id');
-                                
-                                if ($videoAsCover && $coverVideoId) {
-                                    $coverVideo = $product->videos->firstWhere('id', $coverVideoId);
-                                    if ($coverVideo) {
-                                        $hasVideoAsCover = true;
-                                    }
-                                }
-                                
-                                if (!$hasVideoAsCover && $videoAsCover) {
-                                    $coverVideo = $product->videos->first();
-                                    $hasVideoAsCover = true;
-                                }
-                            } catch (\Exception $e) {
-                            }
-                        }
-                        
-                        $product->setAttribute('has_video_as_cover', $hasVideoAsCover);
-                        if ($coverVideo) {
-                            $product->setAttribute('cover_video', $coverVideo);
-                        }
-                        
-                        return $product;
-                    });
+                    $this->appendVideoCoverData($result);
                 }
                 
                 return $result;
@@ -1098,31 +1117,7 @@ class ProductController extends CoreController
             }
             
             if ($canLoadVideos) {
-                try {
-                    if (!$product->relationLoaded('videos')) {
-                        $product->load('videos');
-                    }
-                    
-                    if ($product->videos && $product->videos->count() > 0) {
-                        $videoAsCover = $product->getMeta('video_as_cover');
-                        $coverVideoId = $product->getMeta('cover_video_id');
-                        
-                        if ($videoAsCover && $coverVideoId) {
-                            $coverVideo = $product->videos->firstWhere('id', $coverVideoId);
-                            if ($coverVideo) {
-                                $product->setAttribute('has_video_as_cover', true);
-                                $product->setAttribute('cover_video', $coverVideo);
-                            }
-                        } else if ($videoAsCover) {
-                            $coverVideo = $product->videos->first();
-                            if ($coverVideo) {
-                                $product->setAttribute('has_video_as_cover', true);
-                                $product->setAttribute('cover_video', $coverVideo);
-                            }
-                        }
-                    }
-                } catch (\Exception $e) {
-                }
+                $this->appendVideoCoverData(collect([$product]));
             }
             
             // ВАЖНО: Убеждаемся, что attributes загружены для accessor attribute_values
@@ -1421,7 +1416,9 @@ class ProductController extends CoreController
         $limit = isset($request->limit) ? $request->limit : 10;
         $slug =  $request->slug;
         $language = $request->language ?? DEFAULT_LANGUAGE;
-        return $this->repository->fetchRelated($slug, $limit, $language);
+        return $this->appendVideoCoverData(
+            $this->repository->fetchRelated($slug, $limit, $language)
+        );
     }
 
     public function exportProducts(Request $request, $shop_id)
@@ -1646,7 +1643,9 @@ class ProductController extends CoreController
 
     public function bestSellingProducts(Request $request)
     {
-        return $this->repository->getBestSellingProducts($request);
+        return $this->appendVideoCoverData(
+            $this->repository->getBestSellingProducts($request)
+        );
     }
 
     public function popularProducts(Request $request)
@@ -1676,7 +1675,9 @@ class ProductController extends CoreController
         if ($type_id) {
             $products_query = $products_query->where('type_id', '=', $type_id);
         }
-        return $products_query->orderBy('orders_count', 'desc')->take($limit)->get();
+        return $this->appendVideoCoverData(
+            $products_query->orderBy('orders_count', 'desc')->take($limit)->get()
+        );
     }
 
     public function calculateRentalPrice(Request $request)

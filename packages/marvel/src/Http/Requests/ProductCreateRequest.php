@@ -104,8 +104,9 @@ class ProductCreateRequest extends FormRequest
             'sku'                          => ['nullable', 'string'],
             'image'                        => ['array'],
             'gallery'                      => ['array'],
-            'video'                        => ['nullable', 'sometimes', 'file', 'mimes:mp4,mpeg,mov,avi,wmv,webm,ogv', 'max:102400'], // 100MB максимум
+            'video'                        => ['nullable', 'sometimes', 'file', 'mimetypes:video/mp4,application/mp4,video/webm,video/quicktime,video/mpeg,video/x-msvideo,video/avi,video/x-ms-wmv,video/ogg,application/ogg', 'mimes:mp4,mpeg,mpg,mov,avi,wmv,webm,ogv', 'max:51200'], // 50MB максимум
             'video_as_cover'               => ['nullable', 'boolean'],
+            'remove_video'                 => ['nullable', 'boolean'],
             'status'                       => ['string', Rule::in($productStatus)],
             'height'                       => ['nullable', 'string'],
             'length'                       => ['nullable', 'string'],

@@ -5,7 +5,6 @@ namespace Marvel\Helpers;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Marvel\Database\Models\ProductVideo;
-use Marvel\Database\Models\Product;
 
 class VideoOptimizer
 {
@@ -14,21 +13,25 @@ class VideoOptimizer
      */
     public static function optimizeVideo(ProductVideo $video, $videoPath = null)
     {
+        $generatedKeys = [];
+        $recordUpdated = false;
+
         try {
             // Если путь не передан, пытаемся получить из S3
             if (!$videoPath) {
                 // Проверяем, есть ли файл в S3
-                if (Storage::disk('s3')->exists($video->url)) {
+                $sourceKey = $video->getRawOriginal('url');
+                if ($sourceKey && Storage::disk('s3')->exists($sourceKey)) {
                     // Скачиваем временно для обработки
-                    $tempPath = storage_path('app/temp/' . basename($video->url));
+                    $tempPath = storage_path('app/temp/' . basename($sourceKey));
                     $dir = dirname($tempPath);
                     if (!is_dir($dir)) {
                         mkdir($dir, 0755, true);
                     }
-                    file_put_contents($tempPath, Storage::disk('s3')->get($video->url));
+                    file_put_contents($tempPath, Storage::disk('s3')->get($sourceKey));
                     $videoPath = $tempPath;
                 } else {
-                    Log::warning('VideoOptimizer: Video file not found in S3', ['url' => $video->url]);
+                    Log::warning('VideoOptimizer: Video file not found in S3', ['url' => $sourceKey]);
                     return false;
                 }
             }
@@ -67,9 +70,68 @@ class VideoOptimizer
 
             $videoId = $video->id;
 
+            // Создаём web-совместимую полную версию: MP4/H.264/AAC + faststart.
+            // При любой ошибке оригинал остаётся рабочим fallback.
+            $originalKey = $video->getRawOriginal('url');
+            $optimizedFileName = "products/videos/optimized/{$videoId}.mp4";
+            $optimizedPath = storage_path("app/temp/optimized_{$videoId}.mp4");
+            $optimizedDir = dirname($optimizedPath);
+            if (!is_dir($optimizedDir)) {
+                mkdir($optimizedDir, 0755, true);
+            }
+            $optimizedKey = null;
+
+            try {
+                $webVideo = $ffmpeg->open($videoPath);
+                $maxDimension = max((int) $width, (int) $height);
+                if ($maxDimension > 1280) {
+                    $scale = 1280 / $maxDimension;
+                    $targetWidth = max(2, (int) floor(((int) $width * $scale) / 2) * 2);
+                    $targetHeight = max(2, (int) floor(((int) $height * $scale) / 2) * 2);
+                    $webVideo->filters()->resize(
+                        new \FFMpeg\Coordinate\Dimension($targetWidth, $targetHeight),
+                        \FFMpeg\Filters\Video\ResizeFilter::RESIZEMODE_INSET,
+                        true
+                    );
+                }
+
+                $webFormat = (new \FFMpeg\Format\Video\X264('aac', 'libx264'))
+                    ->setKiloBitrate(1800)
+                    ->setAudioKiloBitrate(128)
+                    ->setPasses(1)
+                    ->setAdditionalParameters(['-movflags', '+faststart', '-pix_fmt', 'yuv420p']);
+                $webVideo->save($webFormat, $optimizedPath);
+
+                if (file_exists($optimizedPath)) {
+                    $stored = Storage::disk('s3')->put(
+                        $optimizedFileName,
+                        file_get_contents($optimizedPath),
+                        [
+                            'visibility' => 'public',
+                            'CacheControl' => 'public, max-age=86400',
+                            'ContentType' => 'video/mp4',
+                        ]
+                    );
+                    if ($stored) {
+                        $optimizedKey = $optimizedFileName;
+                        $generatedKeys[] = $optimizedFileName;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('VideoOptimizer: full web conversion failed; using original', [
+                    'video_id' => $videoId,
+                    'error' => $e->getMessage(),
+                ]);
+            } finally {
+                if (file_exists($optimizedPath)) {
+                    @unlink($optimizedPath);
+                }
+            }
+
             // 1. Создаем 3-секундное превью
             $previewFileName = "products/videos/preview/{$videoId}.mp4";
-            $previewPath = storage_path('app/temp/' . basename($previewFileName));
+            $previewKey = null;
+            $previewPath = storage_path("app/temp/preview_{$videoId}.mp4");
             $previewDir = dirname($previewPath);
             if (!is_dir($previewDir)) {
                 mkdir($previewDir, 0755, true);
@@ -80,21 +142,29 @@ class VideoOptimizer
                 ->filters()
                 ->clip(\FFMpeg\Coordinate\TimeCode::fromSeconds(0), \FFMpeg\Coordinate\TimeCode::fromSeconds($previewDuration));
             
-            $videoFile->save(new \FFMpeg\Format\Video\X264(), $previewPath);
+            $previewFormat = (new \FFMpeg\Format\Video\X264('aac', 'libx264'))
+                ->setPasses(1)
+                ->setAdditionalParameters(['-movflags', '+faststart', '-an', '-pix_fmt', 'yuv420p']);
+            $videoFile->save($previewFormat, $previewPath);
             
             // Загружаем превью в S3
             if (file_exists($previewPath)) {
-                Storage::disk('s3')->put($previewFileName, file_get_contents($previewPath), [
+                $stored = Storage::disk('s3')->put($previewFileName, file_get_contents($previewPath), [
                     'visibility' => 'public',
                     'CacheControl' => 'public, max-age=86400',
                     'ContentType' => 'video/mp4',
                 ]);
+                if ($stored) {
+                    $previewKey = $previewFileName;
+                    $generatedKeys[] = $previewFileName;
+                }
                 unlink($previewPath);
             }
             
             // 2. Создаем постер (WebP) из первого кадра
             $posterFileName = "products/videos/poster/{$videoId}.webp";
-            $posterPath = storage_path('app/temp/' . basename($posterFileName));
+            $posterKey = null;
+            $posterPath = storage_path("app/temp/poster_{$videoId}.webp");
             $posterDir = dirname($posterPath);
             if (!is_dir($posterDir)) {
                 mkdir($posterDir, 0755, true);
@@ -105,17 +175,22 @@ class VideoOptimizer
             
             // Загружаем постер в S3
             if (file_exists($posterPath)) {
-                Storage::disk('s3')->put($posterFileName, file_get_contents($posterPath), [
+                $stored = Storage::disk('s3')->put($posterFileName, file_get_contents($posterPath), [
                     'visibility' => 'public',
                     'CacheControl' => 'public, max-age=86400',
                     'ContentType' => 'image/webp',
                 ]);
+                if ($stored) {
+                    $posterKey = $posterFileName;
+                    $generatedKeys[] = $posterFileName;
+                }
                 unlink($posterPath);
             }
             
             // 3. Создаем thumbnail (JPEG) для списков
             $thumbnailFileName = "products/videos/thumbnail/{$videoId}.jpg";
-            $thumbnailPath = storage_path('app/temp/' . basename($thumbnailFileName));
+            $thumbnailKey = null;
+            $thumbnailPath = storage_path("app/temp/thumbnail_{$videoId}.jpg");
             $thumbnailDir = dirname($thumbnailPath);
             if (!is_dir($thumbnailDir)) {
                 mkdir($thumbnailDir, 0755, true);
@@ -126,11 +201,15 @@ class VideoOptimizer
             
             // Загружаем thumbnail в S3
             if (file_exists($thumbnailPath)) {
-                Storage::disk('s3')->put($thumbnailFileName, file_get_contents($thumbnailPath), [
+                $stored = Storage::disk('s3')->put($thumbnailFileName, file_get_contents($thumbnailPath), [
                     'visibility' => 'public',
                     'CacheControl' => 'public, max-age=86400',
                     'ContentType' => 'image/jpeg',
                 ]);
+                if ($stored) {
+                    $thumbnailKey = $thumbnailFileName;
+                    $generatedKeys[] = $thumbnailFileName;
+                }
                 unlink($thumbnailPath);
             }
             
@@ -141,57 +220,29 @@ class VideoOptimizer
             
             // Обновляем запись в базе
             $video->update([
-                'preview_url' => $previewFileName,
-                'poster_url' => $posterFileName,
-                'thumbnail_url' => $thumbnailFileName,
+                'url' => $optimizedKey ?: $originalKey,
+                'preview_url' => $previewKey,
+                'poster_url' => $posterKey,
+                'thumbnail_url' => $thumbnailKey,
                 'duration' => round($duration, 2),
                 'width' => $width,
                 'height' => $height,
                 'file_size' => $fileSize,
                 'mime_type' => $mimeType,
             ]);
+            $recordUpdated = true;
             
             // Обновляем запись после сохранения, чтобы accessor'ы работали правильно
             $video->refresh();
 
-            // Если установлен флаг "Сделать обложкой", обновляем image товара
-            $product = $video->product;
-            if ($product && $product->getMeta('video_as_cover') && $product->getMeta('cover_video_id') == $video->id) {
-                // Используем постер видео как первое изображение
-                // Используем прямой доступ к атрибуту, так как accessor может вернуть null
-                $posterUrl = $video->attributes['poster_url'] ?? $video->poster_url;
-                
-                if ($posterUrl) {
-                    // Строим полный URL для постера
-                    $fullPosterUrl = self::buildFullUrl($posterUrl);
-                    
-                    $currentImage = $product->image;
-                    $currentGallery = $product->gallery ?? [];
-                    
-                    // Если image - массив, берем первый элемент
-                    if (is_array($currentImage)) {
-                        $firstImage = $currentImage[0] ?? null;
-                    } else {
-                        $firstImage = $currentImage;
-                    }
-                    
-                    // Создаем новую структуру изображений с постером видео первым
-                    $newImage = [
-                        'thumbnail' => $fullPosterUrl,
-                        'original' => $fullPosterUrl,
-                        'id' => null,
-                    ];
-                    
-                    // Если есть существующее изображение, добавляем его в gallery
-                    if ($firstImage) {
-                        $newGallery = array_merge([$newImage], [$firstImage], $currentGallery);
-                    } else {
-                        $newGallery = array_merge([$newImage], $currentGallery);
-                    }
-                    
-                    $product->update([
-                        'image' => $newImage,
-                        'gallery' => $newGallery,
+            if ($optimizedKey && $originalKey && $originalKey !== $optimizedKey) {
+                try {
+                    Storage::disk('s3')->delete($originalKey);
+                } catch (\Throwable $e) {
+                    Log::warning('VideoOptimizer: failed to remove original after conversion', [
+                        'video_id' => $videoId,
+                        'original_key' => $originalKey,
+                        'error' => $e->getMessage(),
                     ]);
                 }
             }
@@ -202,7 +253,7 @@ class VideoOptimizer
             ]);
 
             return true;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('VideoOptimizer: Error optimizing video', [
                 'video_id' => $video->id,
                 'error' => $e->getMessage(),
@@ -213,30 +264,21 @@ class VideoOptimizer
             if (isset($videoPath) && $videoPath && str_contains($videoPath, 'app/temp/')) {
                 @unlink($videoPath);
             }
+            foreach (['optimizedPath', 'previewPath', 'posterPath', 'thumbnailPath'] as $pathVariable) {
+                if (isset($$pathVariable) && file_exists($$pathVariable)) {
+                    @unlink($$pathVariable);
+                }
+            }
+            if (!$recordUpdated) {
+                foreach (array_unique($generatedKeys) as $generatedKey) {
+                    try {
+                        Storage::disk('s3')->delete($generatedKey);
+                    } catch (\Throwable $cleanupError) {
+                    }
+                }
+            }
             
             return false;
         }
     }
-    
-    /**
-     * Построить полный URL (копия из ProductVideo)
-     */
-    private static function buildFullUrl($path)
-    {
-        if (empty($path)) {
-            return null;
-        }
-
-        $url = \App\Support\MediaUrl::publicUrl($path);
-        if ($url) {
-            return $url;
-        }
-
-        if (str_starts_with($path, '/storage/')) {
-            return 'https://api.sancan.ru' . $path;
-        }
-
-        return 'https://api.sancan.ru/storage/' . ltrim($path, '/');
-    }
 }
-
