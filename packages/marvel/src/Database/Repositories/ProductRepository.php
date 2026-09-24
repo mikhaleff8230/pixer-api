@@ -165,15 +165,19 @@ class ProductRepository extends BaseRepository
                 $coverVideo = $coverVideo ?: $product->videos->first();
             }
 
-            $product->setAttribute('has_video_as_cover', (bool) $coverVideo);
-            $product->setAttribute('video_as_cover', (bool) $coverVideo);
-            $product->setAttribute('cover_video_id', $coverVideo?->id);
-            $product->setAttribute('cover_video', $coverVideo);
+            $product->setRawAttributes(array_merge($product->getAttributes(), [
+                'has_video_as_cover' => (bool) $coverVideo,
+                'video_as_cover' => (bool) $coverVideo,
+                'cover_video_id' => $coverVideo?->id,
+            ]));
+            $product->setRelation('cover_video', $coverVideo);
         } catch (\Throwable $e) {
-            $product->setAttribute('has_video_as_cover', false);
-            $product->setAttribute('video_as_cover', false);
-            $product->setAttribute('cover_video_id', null);
-            $product->setAttribute('cover_video', null);
+            $product->setRawAttributes(array_merge($product->getAttributes(), [
+                'has_video_as_cover' => false,
+                'video_as_cover' => false,
+                'cover_video_id' => null,
+            ]));
+            $product->setRelation('cover_video', null);
             Log::warning('ProductRepository - failed to append video cover data', [
                 'product_id' => $product->id,
                 'error' => $e->getMessage(),

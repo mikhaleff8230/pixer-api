@@ -422,10 +422,14 @@ class ProductController extends CoreController
                     $coverVideo = $coverVideo ?: $product->videos->first();
                 }
 
-                $product->setAttribute('has_video_as_cover', (bool) $coverVideo);
-                $product->setAttribute('video_as_cover', (bool) $coverVideo);
-                $product->setAttribute('cover_video_id', $coverVideo?->id);
-                $product->setAttribute('cover_video', $coverVideo);
+                // Metable treats unknown setAttribute() keys as persistent product meta.
+                // Raw response fields and a relation serialize without touching the database.
+                $product->setRawAttributes(array_merge($product->getAttributes(), [
+                    'has_video_as_cover' => (bool) $coverVideo,
+                    'video_as_cover' => (bool) $coverVideo,
+                    'cover_video_id' => $coverVideo?->id,
+                ]));
+                $product->setRelation('cover_video', $coverVideo);
             });
         } catch (\Throwable $e) {
             \Log::warning('ProductController - failed to append video cover data', [
