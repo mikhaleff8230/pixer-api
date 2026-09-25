@@ -157,6 +157,8 @@ class ProductRepository extends BaseRepository
                 FILTER_VALIDATE_BOOLEAN
             );
             $coverVideoId = $product->getMeta('cover_video_id');
+            $mediaOrder = $product->getMeta('media_order', []);
+            $mediaOrder = is_array($mediaOrder) ? array_values($mediaOrder) : [];
             $coverVideo = null;
 
             if ($videoAsCover && $product->videos->isNotEmpty()) {
@@ -170,6 +172,7 @@ class ProductRepository extends BaseRepository
                 'has_video_as_cover' => (bool) $coverVideo,
                 'video_as_cover' => (bool) $coverVideo,
                 'cover_video_id' => $coverVideo?->id,
+                'media_order' => $mediaOrder,
             ]));
             $product->setRelation('cover_video', $coverVideo);
         } catch (\Throwable $e) {
@@ -177,6 +180,7 @@ class ProductRepository extends BaseRepository
                 'has_video_as_cover' => false,
                 'video_as_cover' => false,
                 'cover_video_id' => null,
+                'media_order' => [],
             ]));
             $product->setRelation('cover_video', null);
             Log::warning('ProductRepository - failed to append video cover data', [
@@ -201,6 +205,28 @@ class ProductRepository extends BaseRepository
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    protected function syncMediaOrder(Product $product, $request): void
+    {
+        if (!$request->has('media_order')) {
+            return;
+        }
+
+        $mediaOrder = array_values(array_unique(array_filter(
+            (array) $request->input('media_order', []),
+            static fn ($key) => is_string($key)
+                && preg_match('/^(image|video):.+$/', $key)
+        )));
+
+        if ($mediaOrder === []) {
+            $product->unsetMeta('media_order');
+            $product->save();
+            return;
+        }
+
+        $product->setMeta('media_order', $mediaOrder);
+        $product->save();
     }
 
     protected function storeUploadedProductVideo(Product $product, UploadedFile $file): ProductVideo
@@ -278,8 +304,8 @@ class ProductRepository extends BaseRepository
             $product->setMeta('video_as_cover', true);
             $product->setMeta('cover_video_id', $video->id);
         } else {
-            $product->removeMeta('video_as_cover');
-            $product->removeMeta('cover_video_id');
+            $product->unsetMeta('video_as_cover');
+            $product->unsetMeta('cover_video_id');
         }
 
         OptimizeProductVideo::dispatch($video->id, $previousVideoIds)
@@ -922,8 +948,8 @@ class ProductRepository extends BaseRepository
                         $product->setMeta('video_as_cover', true);
                         $product->setMeta('cover_video_id', $videoRecord->id);
                     } else {
-                        $product->removeMeta('video_as_cover');
-                        $product->removeMeta('cover_video_id');
+                        $product->unsetMeta('video_as_cover');
+                        $product->unsetMeta('cover_video_id');
                     }
                 }
             } elseif ($request->has('video_as_cover')) {
@@ -937,11 +963,12 @@ class ProductRepository extends BaseRepository
                     }
                 } else {
                     // Если галочка снята, удаляем флаг
-                    $product->removeMeta('video_as_cover');
-                    $product->removeMeta('cover_video_id');
+                    $product->unsetMeta('video_as_cover');
+                    $product->unsetMeta('cover_video_id');
                 }
             }
 
+            $this->syncMediaOrder($product, $request);
             $product->save();
 
             $this->syncProductGeoPoint($product->fresh(), $request);
@@ -1561,12 +1588,9 @@ class ProductRepository extends BaseRepository
                     'full_slug' => "{$slugData['slug']}-{$slugData['slug_numeric_code']}",
                 ]);
 
-                if (TRANSLATION_ENABLED) {
-                    $fullSlug = $slugData['slug'] . '-' . $slugData['slug_numeric_code'];
-                    $this->where('slug', $product->slug)->where('id', '!=', $product->id)->update([
-                        'slug' => $fullSlug
-                    ]);
-                }
+                // Не обновляем другие товары с таким же базовым slug. Их различает
+                // slug_numeric_code, и массовая запись связывала разные карточки
+                // одним URL после сохранения одной из них.
             }
 
             // Обработка загрузки видео при обновлении
@@ -1603,8 +1627,8 @@ class ProductRepository extends BaseRepository
                         $product->setMeta('video_as_cover', true);
                         $product->setMeta('cover_video_id', $videoRecord->id);
                     } else {
-                        $product->removeMeta('video_as_cover');
-                        $product->removeMeta('cover_video_id');
+                        $product->unsetMeta('video_as_cover');
+                        $product->unsetMeta('cover_video_id');
                     }
                     
                     // Оптимизируем видео; даже при сбое FFmpeg оригинал остаётся доступен.
@@ -1634,8 +1658,8 @@ class ProductRepository extends BaseRepository
                 }
             } elseif ($request->boolean('remove_video')) {
                 $product->videos()->get()->each->delete();
-                $product->removeMeta('video_as_cover');
-                $product->removeMeta('cover_video_id');
+                $product->unsetMeta('video_as_cover');
+                $product->unsetMeta('cover_video_id');
             } elseif ($request->has('existing_video')) {
                 // Сохраняем существующее видео
                 $product->videos()->delete();
@@ -1660,8 +1684,8 @@ class ProductRepository extends BaseRepository
                     }
                 } else {
                     // Если галочка снята, удаляем флаг
-                    $product->removeMeta('video_as_cover');
-                    $product->removeMeta('cover_video_id');
+                    $product->unsetMeta('video_as_cover');
+                    $product->unsetMeta('cover_video_id');
                 }
             }
             
@@ -1694,6 +1718,7 @@ class ProductRepository extends BaseRepository
             ]);
             
             $product->update($data);
+            $this->syncMediaOrder($product, $request);
 
             $this->syncProductGeoPoint($product->fresh(), $request);
             

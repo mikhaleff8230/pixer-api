@@ -168,6 +168,8 @@ class ProductUpdateRequest extends FormRequest
             'sku'                          => ['nullable', 'string', Rule::unique('variation_options')->where(fn ($query) => $query->whereSku($this->sku))],
             'image'                        => ['array'],
             'gallery'                      => ['array'],
+            'media_order'                  => ['nullable', 'array'],
+            'media_order.*'                => ['string', 'max:2048'],
             'video'                        => ['nullable', 'sometimes', 'file', 'mimetypes:video/mp4,application/mp4,video/webm,video/quicktime,video/mpeg,video/x-msvideo,video/avi,video/x-ms-wmv,video/ogg,application/ogg', 'mimes:mp4,mpeg,mpg,mov,avi,wmv,webm,ogv', 'max:51200'], // 50MB максимум
             'video_as_cover'               => ['nullable', 'boolean'],
             'remove_video'                 => ['nullable', 'boolean'],

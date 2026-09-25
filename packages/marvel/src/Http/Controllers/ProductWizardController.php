@@ -176,6 +176,18 @@ class ProductWizardController extends CoreController
                         $product->fill($productData);
                         $product->save();
 
+                        if (isset($variantData['media_order']) && is_array($variantData['media_order'])) {
+                            $mediaOrder = array_values(array_unique(array_filter(
+                                $variantData['media_order'],
+                                static fn ($key) => is_string($key)
+                                    && preg_match('/^(image|video):.+$/', $key)
+                            )));
+                            $mediaOrder === []
+                                ? $product->unsetMeta('media_order')
+                                : $product->setMeta('media_order', $mediaOrder);
+                            $product->save();
+                        }
+
                         // Обновляем категории
                         if (isset($variantData['categories']) && is_array($variantData['categories'])) {
                             $categoryIds = array_map('intval', $variantData['categories']);
@@ -295,6 +307,18 @@ class ProductWizardController extends CoreController
                         ]);
                         
                         $product = Product::create($productData);
+
+                        if (isset($variantData['media_order']) && is_array($variantData['media_order'])) {
+                            $mediaOrder = array_values(array_unique(array_filter(
+                                $variantData['media_order'],
+                                static fn ($key) => is_string($key)
+                                    && preg_match('/^(image|video):.+$/', $key)
+                            )));
+                            $mediaOrder === []
+                                ? $product->unsetMeta('media_order')
+                                : $product->setMeta('media_order', $mediaOrder);
+                            $product->save();
+                        }
                         
                         // Проверяем, что slug_numeric_code сохранился
                         $product->refresh();
@@ -463,6 +487,13 @@ class ProductWizardController extends CoreController
                 ->orderBy('id', 'asc')
                 ->get();
 
+            $loadedVariants->each(function (Product $variant) {
+                $mediaOrder = $variant->getMeta('media_order', []);
+                $variant->setRawAttributes(array_merge($variant->getAttributes(), [
+                    'media_order' => is_array($mediaOrder) ? array_values($mediaOrder) : [],
+                ]));
+            });
+
             Log::info('ProductWizardController::saveVariants - SUCCESS', [
                 'saved_count' => count($savedVariants),
                 'errors_count' => count($errors),
@@ -510,6 +541,13 @@ class ProductWizardController extends CoreController
                 ->where('group_key', $groupKey)
                 ->orderBy('id', 'asc') // Первый созданный = главный
                 ->get();
+
+            $variants->each(function (Product $variant) {
+                $mediaOrder = $variant->getMeta('media_order', []);
+                $variant->setRawAttributes(array_merge($variant->getAttributes(), [
+                    'media_order' => is_array($mediaOrder) ? array_values($mediaOrder) : [],
+                ]));
+            });
 
             return response()->json([
                 'success' => true,

@@ -413,6 +413,8 @@ class ProductController extends CoreController
                     FILTER_VALIDATE_BOOLEAN
                 );
                 $coverVideoId = $product->getMeta('cover_video_id');
+                $mediaOrder = $product->getMeta('media_order', []);
+                $mediaOrder = is_array($mediaOrder) ? array_values($mediaOrder) : [];
                 $coverVideo = null;
 
                 if ($videoAsCover && $product->videos && $product->videos->isNotEmpty()) {
@@ -428,6 +430,7 @@ class ProductController extends CoreController
                     'has_video_as_cover' => (bool) $coverVideo,
                     'video_as_cover' => (bool) $coverVideo,
                     'cover_video_id' => $coverVideo?->id,
+                    'media_order' => $mediaOrder,
                 ]));
                 $product->setRelation('cover_video', $coverVideo);
             });
@@ -945,8 +948,7 @@ class ProductController extends CoreController
                 ]);
                 
                 // Загружаем полные данные товара
-                $request->merge(['slug' => $product->slug]);
-                return $this->fetchSingleProduct($request);
+                return $this->fetchSingleProduct($request, $product);
             }
             
             // Если не найден напрямую, парсим slug для старых форматов
@@ -976,8 +978,7 @@ class ProductController extends CoreController
                     ]);
                     
                     // Загружаем полные данные товара
-                    $request->merge(['slug' => $product->slug]);
-                    return $this->fetchSingleProduct($request);
+                    return $this->fetchSingleProduct($request, $product);
                 }
             }
             
@@ -996,8 +997,7 @@ class ProductController extends CoreController
                     ]);
                     
                     // Загружаем полные данные товара
-                    $request->merge(['slug' => $product->slug]);
-                    return $this->fetchSingleProduct($request);
+                    return $this->fetchSingleProduct($request, $product);
                 }
             }
             
@@ -1015,8 +1015,7 @@ class ProductController extends CoreController
                 ]);
                 
                 // Загружаем полные данные товара
-                $request->merge(['slug' => $product->slug]);
-                return $this->fetchSingleProduct($request);
+                return $this->fetchSingleProduct($request, $product);
             }
 
             // 4. Товар не найден никаким способом
@@ -1048,7 +1047,7 @@ class ProductController extends CoreController
      * @param $slug
      * @return JsonResponse
      */
-    public function fetchSingleProduct(Request $request)
+    public function fetchSingleProduct(Request $request, ?Product $resolvedProduct = null)
     {
         try {
             $slug = $request->slug;
@@ -1056,10 +1055,21 @@ class ProductController extends CoreController
             $user = $request->user();
             $limit = isset($request->limit) ? $request->limit : 10;
             
-            // Находим товар БЕЗ связей
-            $product = Product::where('language', $language)
-                ->where('slug', $slug)
-                ->first();
+            // show() уже разрешил полный URL (slug + slug_numeric_code) в конкретный
+            // товар. Не ищем его повторно только по базовому slug: несколько товаров
+            // с одинаковыми названиями имеют одинаковый slug, но разные числовые коды.
+            $product = $resolvedProduct;
+
+            if ($product && $product->language !== $language) {
+                $product = null;
+            }
+
+            if (!$product) {
+                // Прямой вызов метода сохраняет прежнюю совместимость поиска по slug.
+                $product = Product::where('language', $language)
+                    ->where('slug', $slug)
+                    ->first();
+            }
             
             // Если не нашли по slug, пробуем по id (если slug числовой)
             if (!$product && is_numeric($slug)) {
