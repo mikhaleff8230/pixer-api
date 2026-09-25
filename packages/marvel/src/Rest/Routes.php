@@ -658,6 +658,10 @@ Route::group(
         Route::delete('/products/attributes/remove', [ProductAttributeController::class, 'removeProductAttribute']);
         Route::post('/products/filter-by-attributes', [ProductAttributeController::class, 'filterProductsByAttributes']);
         
+        Route::post('/products/{id}/video', [ProductController::class, 'uploadVideo'])
+            ->where('id', '[0-9]+');
+        Route::get('/products/{id}/video-status', [ProductController::class, 'videoStatus'])
+            ->where('id', '[0-9]+');
         // Теперь регистрируем apiResource для products (после специфичных роутов)
         Route::apiResource('products', ProductController::class, [
             'only' => ['store', 'update', 'destroy'],

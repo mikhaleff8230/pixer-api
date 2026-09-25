@@ -18,6 +18,8 @@ class ProductVideo extends Model
         'height',
         'file_size',
         'mime_type',
+        'processing_status',
+        'processing_error',
     ];
 
     protected $casts = [
@@ -106,6 +108,10 @@ class ProductVideo extends Model
 
     public function getStatusAttribute()
     {
+        if (!empty($this->attributes['processing_status'])) {
+            return $this->attributes['processing_status'];
+        }
+
         return !empty($this->attributes['url']) ? 'ready' : 'error';
     }
 

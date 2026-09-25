@@ -33,6 +33,7 @@ use Marvel\Events\ProductReviewApproved;
 use Marvel\Events\ProductReviewRejected;
 use Marvel\Events\ProductCreated;
 use Marvel\Events\ProductUnderReview;
+use Marvel\Jobs\OptimizeProductVideo;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ProductRepository extends BaseRepository
@@ -253,6 +254,59 @@ class ProductRepository extends BaseRepository
         }
     }
 
+
+    /**
+     * Stores the original video first and queues expensive FFmpeg processing.
+     * Previous videos stay available until the replacement is verified.
+     */
+    public function queueUploadedProductVideo(
+        Product $product,
+        UploadedFile $file,
+        bool $asCover = true
+    ): Product {
+        $previousVideoIds = $product->videos()->pluck('id')->map(
+            fn ($id) => (int) $id
+        )->all();
+
+        $video = $this->storeUploadedProductVideo($product, $file);
+        $video->update([
+            'processing_status' => 'pending',
+            'processing_error' => null,
+        ]);
+
+        if ($asCover) {
+            $product->setMeta('video_as_cover', true);
+            $product->setMeta('cover_video_id', $video->id);
+        } else {
+            $product->removeMeta('video_as_cover');
+            $product->removeMeta('cover_video_id');
+        }
+
+        OptimizeProductVideo::dispatch($video->id, $previousVideoIds)
+            ->onQueue('default')
+            ->afterCommit();
+
+        $this->bumpProductCatalogCacheVersion();
+
+        return $this->appendVideoCoverAttributes($product->fresh());
+    }
+
+    public function getProductVideoStatus(Product $product): array
+    {
+        $product = $this->appendVideoCoverAttributes($product->fresh());
+        $latestVideo = $product->videos->sortByDesc('id')->first();
+
+        return [
+            'status' => $latestVideo?->status ?? 'none',
+            'processing_error' => $latestVideo?->processing_error,
+            'video' => $latestVideo,
+            'videos' => $product->videos->sortByDesc('id')->values(),
+            'cover_video' => $product->cover_video,
+            'cover_video_id' => $product->cover_video_id,
+            'has_video_as_cover' => (bool) $product->has_video_as_cover,
+            'video_as_cover' => (bool) $product->video_as_cover,
+        ];
+    }
     /**
      * Создаёт/обновляет geo_points и привязку товара по lat/lng из запроса.
      * Ключи lat/lng отсутствуют — гео не трогаем (сохраняем точку на карте).

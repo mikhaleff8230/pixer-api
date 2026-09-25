@@ -833,6 +833,51 @@ class ProductController extends CoreController
         }
     }
 
+    public function uploadVideo(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'video' => [
+                'required',
+                'file',
+                'max:51200',
+                'mimetypes:video/mp4,application/mp4,video/quicktime,video/webm',
+            ],
+            'video_as_cover' => ['nullable', 'boolean'],
+        ], [
+            'video.required' => 'Выберите видео для загрузки.',
+            'video.file' => 'Не удалось прочитать видеофайл.',
+            'video.max' => 'Размер видео не должен превышать 50 МБ.',
+            'video.mimetypes' => 'Разрешены видео MP4, MOV и WebM.',
+        ]);
+
+        $product = $this->repository->findOrFail($id);
+        if (!$this->repository->hasPermission($request->user(), $product->shop_id)) {
+            throw new AuthorizationException(NOT_AUTHORIZED);
+        }
+
+        $product = $this->repository->queueUploadedProductVideo(
+            $product,
+            $validated['video'],
+            $request->boolean('video_as_cover', true)
+        );
+
+        return response()->json(
+            $this->repository->getProductVideoStatus($product),
+            202
+        );
+    }
+
+    public function videoStatus(Request $request, $id): JsonResponse
+    {
+        $product = $this->repository->findOrFail($id);
+        if (!$this->repository->hasPermission($request->user(), $product->shop_id)) {
+            throw new AuthorizationException(NOT_AUTHORIZED);
+        }
+
+        return response()->json(
+            $this->repository->getProductVideoStatus($product)
+        );
+    }
     /**
      * Display the specified resource.
      * Поддерживает формат: /element/{slug}-{id} или /element/{slug} (старый формат)
