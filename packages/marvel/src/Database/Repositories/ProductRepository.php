@@ -218,6 +218,7 @@ class ProductRepository extends BaseRepository
             static fn ($key) => is_string($key)
                 && preg_match('/^(image|video):.+$/', $key)
         )));
+        $mediaOrder = $this->normalizeVideoMediaOrder($product, $mediaOrder);
 
         if ($mediaOrder === []) {
             $product->unsetMeta('media_order');
@@ -226,6 +227,52 @@ class ProductRepository extends BaseRepository
         }
 
         $product->setMeta('media_order', $mediaOrder);
+        $product->save();
+    }
+
+    /**
+     * Keeps stored video keys valid and inserts a newly uploaded video directly
+     * after the primary image slot. The key is retained while video is used as
+     * cover, so disabling the cover restores its previous gallery position.
+     */
+    protected function normalizeVideoMediaOrder(Product $product, array $mediaOrder): array
+    {
+        $videoKeys = $product->videos()
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(static fn ($id) => 'video:' . $id)
+            ->values()
+            ->all();
+        $validVideoKeys = array_flip($videoKeys);
+
+        $mediaOrder = array_values(array_filter(
+            $mediaOrder,
+            static fn ($key) => is_string($key)
+                && (!str_starts_with($key, 'video:')
+                    || isset($validVideoKeys[$key]))
+        ));
+
+        foreach ($videoKeys as $videoKey) {
+            if (in_array($videoKey, $mediaOrder, true)) {
+                continue;
+            }
+            array_splice($mediaOrder, min(1, count($mediaOrder)), 0, [$videoKey]);
+        }
+
+        return array_values(array_unique($mediaOrder));
+    }
+
+    protected function syncStoredVideoMediaOrder(Product $product): void
+    {
+        $mediaOrder = $product->getMeta('media_order', []);
+        $mediaOrder = is_array($mediaOrder) ? array_values($mediaOrder) : [];
+        $mediaOrder = $this->normalizeVideoMediaOrder($product, $mediaOrder);
+
+        if ($mediaOrder === []) {
+            $product->unsetMeta('media_order');
+        } else {
+            $product->setMeta('media_order', $mediaOrder);
+        }
         $product->save();
     }
 
@@ -308,6 +355,8 @@ class ProductRepository extends BaseRepository
             $product->unsetMeta('cover_video_id');
         }
 
+        $this->syncStoredVideoMediaOrder($product);
+
         OptimizeProductVideo::dispatch($video->id, $previousVideoIds)
             ->onQueue('default')
             ->afterCommit();
@@ -331,6 +380,9 @@ class ProductRepository extends BaseRepository
             'cover_video_id' => $product->cover_video_id,
             'has_video_as_cover' => (bool) $product->has_video_as_cover,
             'video_as_cover' => (bool) $product->video_as_cover,
+            'media_order' => is_array($product->media_order ?? null)
+                ? array_values($product->media_order)
+                : [],
         ];
     }
     /**
@@ -1660,6 +1712,7 @@ class ProductRepository extends BaseRepository
                 $product->videos()->get()->each->delete();
                 $product->unsetMeta('video_as_cover');
                 $product->unsetMeta('cover_video_id');
+                $this->syncStoredVideoMediaOrder($product);
             } elseif ($request->has('existing_video')) {
                 // Сохраняем существующее видео
                 $product->videos()->delete();
@@ -1667,6 +1720,7 @@ class ProductRepository extends BaseRepository
                     'product_id' => $product->id,
                     'url' => $request->input('existing_video')
                 ]);
+                $this->syncStoredVideoMediaOrder($product);
             }
             
             // Обрабатываем флаг video_as_cover (только если видео НЕ загружается)
