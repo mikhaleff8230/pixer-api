@@ -516,11 +516,21 @@ class ProductController extends CoreController
                 if ($request->orderBy === 'orders_count') {
                     $query->withCount('orders');
                 }
-                
+
                 if ($request->orderBy && $request->sortedBy) {
-                    $orderBy = $request->orderBy;
+                    $allowedSortColumns = [
+                        'created_at',
+                        'updated_at',
+                        'price',
+                        'sale_price',
+                        'views_count',
+                        'orders_count',
+                    ];
+                    $orderBy = in_array($request->orderBy, $allowedSortColumns, true)
+                        ? $request->orderBy
+                        : 'updated_at';
                     $sortedBy = strtoupper($request->sortedBy) === 'ASC' ? 'asc' : 'desc';
-                    $query->orderBy($orderBy, $sortedBy);
+                    $query->orderBy($orderBy, $sortedBy)->orderBy('id', 'desc');
                 } else {
                     $query->orderBy('updated_at', 'desc');
                 }
@@ -1701,7 +1711,6 @@ class ProductController extends CoreController
     {
         $limit = $request->limit ? $request->limit : 10;
         $language = $request->language ?? DEFAULT_LANGUAGE;
-        $range = !empty($request->range) && $request->range !== 'undefined'  ? $request->range : '';
         $type_id = $request->type_id ? $request->type_id : '';
         if (isset($request->type_slug) && empty($type_id)) {
             try {
@@ -1711,22 +1720,59 @@ class ProductController extends CoreController
                 throw new MarvelException(NOT_FOUND);
             }
         }
-        $products_query = $this->repository->withCount('orders')->with(['type', 'shop'])->orderBy('orders_count', 'desc')->where('language', $language);
+        $products_query = $this->repository
+            ->with(['type', 'shop'])
+            ->where('language', $language)
+            ->where('status', 'publish');
         if (isset($request->shop_id)) {
             $products_query = $products_query->where('shop_id', "=", $request->shop_id);
         }
 
-        $products_query = $products_query->withCount(['orders' => function ($query) use ($range) {
-            if ($range) {
-                $query->where('parent_id', null)->where('orders.created_at', '>', Carbon::now()->subDays($range + 2));
-            }
-        }]);
         if ($type_id) {
             $products_query = $products_query->where('type_id', '=', $type_id);
         }
         return $this->appendVideoCoverData(
-            $products_query->orderBy('orders_count', 'desc')->take($limit)->get()
+            $products_query
+                ->orderBy('views_count', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->take($limit)
+                ->get()
         );
+    }
+
+    /**
+     * Count a product detail view at most once per viewer in a 12-hour window.
+     */
+    public function recordView(Request $request, $id): JsonResponse
+    {
+        $product = Product::query()
+            ->where('status', 'publish')
+            ->findOrFail($id);
+
+        $viewer = $request->user()?->id
+            ? 'user:' . $request->user()->id
+            : 'guest:' . hash('sha256', (string) $request->ip() . '|' . substr((string) $request->userAgent(), 0, 255));
+        $cacheKey = 'product_view:' . $product->id . ':' . $viewer;
+        $shouldIncrement = true;
+
+        try {
+            $shouldIncrement = \Cache::add($cacheKey, true, now()->addHours(12));
+        } catch (\Throwable $e) {
+            \Log::warning('Product view deduplication cache unavailable', [
+                'product_id' => $product->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($shouldIncrement) {
+            Product::query()->whereKey($product->id)->increment('views_count');
+            $product->refresh();
+        }
+
+        return response()->json([
+            'counted' => $shouldIncrement,
+            'views_count' => (int) $product->views_count,
+        ]);
     }
 
     public function calculateRentalPrice(Request $request)

@@ -183,6 +183,9 @@ Route::get('products/{id}/access', [DownloadController::class, 'accessPurchasedP
     ->where('id', '[0-9]+');
 Route::post('products/{id}/access', [DownloadController::class, 'accessPurchasedProduct'])
     ->where('id', '[0-9]+');
+Route::post('products/{id}/view', [ProductController::class, 'recordView'])
+    ->middleware('throttle:120,1')
+    ->where('id', '[0-9]+');
 
 // Онлайн-курсы (подписка + drip + прогресс)
 Route::get('courses', [CourseController::class, 'index']);
