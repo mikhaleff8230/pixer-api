@@ -8,6 +8,7 @@ use App\Models\SellerAdStatDaily;
 use App\Models\SellerYandexAdGroup;
 use App\Models\YandexDirectErrorLog;
 use App\Models\YandexDirectSetting;
+use App\Services\DecimalMoney;
 use App\Services\YandexDirect\YandexDirectService;
 use App\Jobs\SyncSellerYandexBoostJob;
 use App\Jobs\PauseAllYandexBoostJob;
@@ -71,6 +72,12 @@ class YandexDirectController extends Controller
 
     private function monitorData(): array
     {
-        return ['active_seller_groups'=>SellerYandexAdGroup::where('status','active')->count(),'active_boost_products'=>Product::where('boost_enabled',true)->where('status','publish')->count(),'yandex_cost_today'=>SellerAdStatDaily::whereDate('date',today())->sum('yandex_cost'),'seller_charged_today'=>SellerAdBillingEntry::whereDate('created_at',today())->where('status','charged')->sum('seller_charge'),'intensity_distribution'=>SellerYandexAdGroup::selectRaw('bid_level,COUNT(*) as sellers')->groupBy('bid_level')->orderBy('bid_level')->get(),'last_sync_at'=>YandexDirectSetting::current()->last_sync_at];
+        $settings=YandexDirectSetting::current();
+        $yandexCostToday=DecimalMoney::decimal(DecimalMoney::cents((string)SellerAdStatDaily::whereDate('date',today())->sum('yandex_cost')));
+        $sellerCostToday=DecimalMoney::addMarkup($yandexCostToday,(string)$settings->markup_percent);
+        $sellerChargedToday=DecimalMoney::decimal(DecimalMoney::cents((string)SellerAdBillingEntry::whereDate('created_at',today())->where('status','charged')->sum('seller_charge')));
+        $marginToday=DecimalMoney::decimal(DecimalMoney::cents($sellerCostToday)-DecimalMoney::cents($yandexCostToday));
+        $catchupChargedToday=DecimalMoney::decimal(max(0,DecimalMoney::cents($sellerChargedToday)-DecimalMoney::cents($sellerCostToday)));
+        return ['active_seller_groups'=>SellerYandexAdGroup::where('status','active')->count(),'active_boost_products'=>Product::where('boost_enabled',true)->where('status','publish')->count(),'yandex_cost_today'=>$yandexCostToday,'seller_cost_today'=>$sellerCostToday,'sancan_margin_today'=>$marginToday,'seller_charged_today'=>$sellerChargedToday,'catchup_charged_today'=>$catchupChargedToday,'intensity_distribution'=>SellerYandexAdGroup::selectRaw('bid_level,COUNT(*) as sellers')->groupBy('bid_level')->orderBy('bid_level')->get(),'last_sync_at'=>$settings->last_sync_at];
     }
 }
