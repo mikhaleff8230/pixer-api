@@ -2,13 +2,18 @@
 
 namespace App\Services\YandexDirect;
 
+use App\Exceptions\YandexDirectReportPending;
 use App\Models\YandexDirectSetting;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class YandexDirectService
 {
+    private const REPORT_MAX_ATTEMPTS = 6;
+    private const REPORT_MAX_RETRY_DELAY_SECONDS = 30;
+
     private YandexDirectSetting $settings;
 
     public function __construct(?YandexDirectSetting $settings = null)
@@ -141,12 +146,28 @@ class YandexDirectService
     public function getGroupStats(array $adGroupIds, string $dateFrom, string $dateTo): array
     {
         if (!$adGroupIds) return [];
-        $body = ['params'=>['SelectionCriteria'=>['Filter'=>[['Field'=>'AdGroupId','Operator'=>'IN','Values'=>array_values(array_map('strval',$adGroupIds))]],'DateFrom'=>$dateFrom,'DateTo'=>$dateTo],'FieldNames'=>['AdGroupId','Impressions','Clicks','Cost'],'ReportName'=>'SANCAN Boost '.now()->format('YmdHis'),'ReportType'=>'CUSTOM_REPORT','DateRangeType'=>'CUSTOM_DATE','Format'=>'TSV','IncludeVAT'=>'NO','IncludeDiscount'=>'NO']];
-        $response = $this->client()->withHeaders(['skipReportHeader'=>'true','skipReportSummary'=>'true','returnMoneyInMicros'=>'false'])->post('https://api.direct.yandex.com/json/v5/reports',$body);
-        if ($response->status() === 201 || $response->status() === 202) throw new RuntimeException('Отчёт Direct ещё формируется. Повторите синхронизацию позже.');
+        $reportName = 'SANCAN Boost '.now()->format('YmdHis').'-'.Str::uuid();
+        $body = ['params'=>['SelectionCriteria'=>['Filter'=>[['Field'=>'AdGroupId','Operator'=>'IN','Values'=>array_values(array_map('strval',$adGroupIds))]],'DateFrom'=>$dateFrom,'DateTo'=>$dateTo],'FieldNames'=>['AdGroupId','Impressions','Clicks','Cost'],'ReportName'=>$reportName,'ReportType'=>'CUSTOM_REPORT','DateRangeType'=>'CUSTOM_DATE','Format'=>'TSV','IncludeVAT'=>'NO','IncludeDiscount'=>'NO']];
+        $client = $this->client()->withHeaders(['skipReportHeader'=>'true','skipReportSummary'=>'true','returnMoneyInMicros'=>'false']);
+
+        for ($attempt = 1; $attempt <= self::REPORT_MAX_ATTEMPTS; $attempt++) {
+            $response = $client->post('https://api.direct.yandex.com/json/v501/reports', $body);
+            if (!in_array($response->status(), [201, 202], true)) break;
+            if ($attempt === self::REPORT_MAX_ATTEMPTS) {
+                throw new YandexDirectReportPending('Отчёт Direct всё ещё формируется; синхронизация будет повторена автоматически.');
+            }
+            $retryIn = min(self::REPORT_MAX_RETRY_DELAY_SECONDS, max(0, (int) $response->header('retryIn', 5)));
+            $this->waitForReport($retryIn);
+        }
+
         $response->throw(); $lines=preg_split('/\r?\n/',trim($response->body())); $headers=str_getcsv((string)array_shift($lines),"\t"); $result=[];
         foreach($lines as $line){if(trim($line)==='')continue;$row=array_combine($headers,str_getcsv($line,"\t"));$id=(int)($row['AdGroupId']??0);if(!$id)continue;$result[$id]=['impressions'=>(int)($row['Impressions']??0),'clicks'=>(int)($row['Clicks']??0),'cost'=>(string)($row['Cost']??'0.00')];}
         return $result;
+    }
+
+    protected function waitForReport(int $seconds): void
+    {
+        sleep($seconds);
     }
 
     public function buildFeedFilter(array $ids): array
