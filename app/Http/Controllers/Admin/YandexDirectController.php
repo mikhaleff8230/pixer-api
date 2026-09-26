@@ -17,7 +17,7 @@ use Marvel\Database\Models\Product;
 
 class YandexDirectController extends Controller
 {
-    public function show(): array { return ['settings' => YandexDirectSetting::current()->safeArray(), 'monitor' => $this->monitorData(), 'errors' => YandexDirectErrorLog::actionable()->latest()->limit(20)->get()]; }
+    public function show(): array { return ['settings' => YandexDirectSetting::current()->safeArray(), 'monitor' => $this->monitorData(), 'errors' => YandexDirectErrorLog::actionable()->where('created_at','>=',now()->subDays(30))->latest()->limit(20)->get()]; }
 
     public function update(Request $request)
     {
