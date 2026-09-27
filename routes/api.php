@@ -1569,6 +1569,7 @@ Route::get('/second-life/products/{productId}/payment-options', [App\Http\Contro
 Route::get('/second-life/products/{productId}/payment-options', [App\Http\Controllers\SecondLife\OrderController::class, 'paymentOptions']);
 
 Route::middleware('auth:api')->group(function () {
+    Route::get('/seller/dashboard', App\Http\Controllers\SellerDashboardController::class);
     Route::put('/products/{product}/boost', [App\Http\Controllers\YandexBoostController::class, 'toggle'])->middleware('throttle:30,1');
     Route::put('/seller/promotion/boost', [App\Http\Controllers\YandexBoostController::class, 'bulkToggle'])->middleware('throttle:10,1');
     Route::get('/seller/promotion', [App\Http\Controllers\YandexBoostController::class, 'dashboard']);
