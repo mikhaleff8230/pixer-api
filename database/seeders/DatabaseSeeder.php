@@ -24,6 +24,6 @@ class DatabaseSeeder extends Seeder
      */
     public function run()
     {
-        // run your app seeder
+        $this->call(\Database\Seeders\SystemCommunitiesSeeder::class);
     }
 }

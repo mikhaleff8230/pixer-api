@@ -27,6 +27,8 @@ type Category {
     products_count: Int @count(relation: "products")
     details: String
     image: Attachment
+    menu_icon: Attachment
+    menu_banner: Attachment
     icon: String
     type: Type! @belongsTo
     products: [Product] @belongsToMany
@@ -41,6 +43,8 @@ input CreateCategoryInput {
     parent: ID
     details: String
     image: AttachmentInput
+    menu_icon: AttachmentInput
+    menu_banner: AttachmentInput
     icon: String
     slug: String @rules(apply: ["required", "max:255"])
 }
@@ -54,6 +58,8 @@ input UpdateCategoryInput {
     parent: ID
     details: String
     image: AttachmentInput
+    menu_icon: AttachmentInput
+    menu_banner: AttachmentInput
     icon: String
 }
 

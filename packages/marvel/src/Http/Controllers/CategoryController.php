@@ -72,7 +72,10 @@ class CategoryController extends CoreController
             ->where('slug', '!=', '')
             ->orderBy('sort_order', 'asc')
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'parent', 'icon', 'status', 'sort_order']);
+            ->get([
+                'id', 'name', 'slug', 'parent', 'icon', 'image',
+                'menu_icon', 'menu_banner', 'details', 'status', 'sort_order'
+            ]);
         
         return $categories;
     }

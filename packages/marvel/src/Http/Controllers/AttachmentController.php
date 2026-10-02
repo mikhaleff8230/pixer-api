@@ -50,9 +50,13 @@ class AttachmentController extends CoreController
             $attachment->addMedia($media)->toMediaCollection('default', $mediaDisk);
             foreach ($attachment->getMedia() as $media) {
                 if (strpos($media->mime_type, 'image/') !== false) {
+                    $originalUrl = $media->getUrl();
                     $converted_url = [
-                        'thumbnail' => $media->getUrl('thumbnail'),
-                        'original' => $media->getUrl(),
+                        // SVG используется как интерфейсная иконка и не требует raster-конвертации.
+                        'thumbnail' => $media->mime_type === 'image/svg+xml'
+                            ? $originalUrl
+                            : $media->getUrl('thumbnail'),
+                        'original' => $originalUrl,
                         'id' => $attachment->id
                     ];
                 } else {

@@ -47,6 +47,7 @@ use Marvel\Http\Controllers\PlaceWishlistController;
 use Marvel\Http\Controllers\PlaceLikeController;
 use Marvel\Http\Controllers\PlaceCommentController;
 use Marvel\Http\Controllers\CommentController;
+use Marvel\Http\Controllers\CommunityController;
 use Marvel\Http\Controllers\XmlImportController;
 use Marvel\Http\Controllers\PlaceParserController;
 use App\Http\Controllers\CustomYooKassaOrderController;
@@ -450,6 +451,19 @@ Route::apiResource('tags', TagController::class, [
 Route::apiResource('hashtags', HashtagController::class, [
     'only' => ['index', 'show'],
 ]);
+Route::get('communities', [CommunityController::class, 'index']);
+Route::get('communities/{slug}', [CommunityController::class, 'show']);
+Route::get('communities/{community}/places', [CommunityController::class, 'places'])->where('community', '[0-9]+');
+Route::prefix('social')->group(function () {
+    Route::get('communities', [CommunityController::class, 'index']);
+    Route::get('communities/{slug}', [CommunityController::class, 'show']);
+    Route::get('communities/{community}/places', [CommunityController::class, 'places'])->where('community', '[0-9]+');
+});
+Route::prefix('api/social')->group(function () {
+    Route::get('communities', [CommunityController::class, 'index']);
+    Route::get('communities/{slug}', [CommunityController::class, 'show']);
+    Route::get('communities/{community}/places', [CommunityController::class, 'places'])->where('community', '[0-9]+');
+});
 Route::apiResource('resources', ResourceController::class, [
     'only' => ['index', 'show']
 ]);
@@ -586,6 +600,11 @@ Route::group(['middleware' => ['can:' . Permission::CUSTOMER, 'auth:sanctum', 'e
     Route::apiResource('places', PlaceController::class, [
         'only' => ['store', 'update', 'destroy'],
     ]);
+    Route::post('communities/{community}/membership', [CommunityController::class, 'toggleMembership']);
+    Route::post('social/communities/{community}/join', [CommunityController::class, 'join']);
+    Route::delete('social/communities/{community}/join', [CommunityController::class, 'leave']);
+    Route::post('api/social/communities/{community}/join', [CommunityController::class, 'join']);
+    Route::delete('api/social/communities/{community}/join', [CommunityController::class, 'leave']);
     
     // Place wishlist routes
     Route::post('place-wishlists/toggle', [PlaceWishlistController::class, 'toggle']);

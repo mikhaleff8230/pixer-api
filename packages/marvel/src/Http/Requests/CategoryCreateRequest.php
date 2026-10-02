@@ -33,6 +33,8 @@ class CategoryCreateRequest extends FormRequest
             // 'type_id'     => ['required', 'integer'],
             'icon'        => ['nullable', 'string'],
             'image'       => ['array'],
+            'menu_icon'   => ['nullable', 'array'],
+            'menu_banner' => ['nullable', 'array'],
             'details'     => ['nullable', 'string'],
             'language'     => ['nullable', 'string'],
             'parent'      => ['nullable', 'integer'],

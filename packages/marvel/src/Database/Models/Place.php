@@ -13,11 +13,19 @@ class Place extends Model
 
     protected $fillable = [
         'user_id',
+        'community_id',
         'title',
         'slug',
         'description',
+        'location',
+        'alt_text',
+        'allow_comments',
         'language',
         'source_url',
+    ];
+
+    protected $casts = [
+        'allow_comments' => 'boolean',
     ];
 
     protected $appends = ['url'];
@@ -25,6 +33,11 @@ class Place extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function community()
+    {
+        return $this->belongsTo(Community::class);
     }
 
     public function images()
@@ -120,9 +133,35 @@ class Place extends Model
             }
         });
 
+        static::created(function ($place) {
+            if ($place->community_id) {
+                Community::whereKey($place->community_id)->update([
+                    'places_count' => self::where('community_id', $place->community_id)->count(),
+                ]);
+            }
+        });
+
+        static::updated(function ($place) {
+            if ($place->wasChanged('community_id')) {
+                foreach (array_filter([$place->getOriginal('community_id'), $place->community_id]) as $communityId) {
+                    Community::whereKey($communityId)->update([
+                        'places_count' => self::where('community_id', $communityId)->count(),
+                    ]);
+                }
+            }
+        });
+
         // Очищаем изображения и видео при удалении места
         static::deleting(function ($place) {
             $place->deletePlaceMedia();
+        });
+
+        static::deleted(function ($place) {
+            if ($place->community_id) {
+                Community::whereKey($place->community_id)->update([
+                    'places_count' => self::where('community_id', $place->community_id)->count(),
+                ]);
+            }
         });
     }
 
@@ -243,4 +282,4 @@ class Place extends Model
             ]);
         }
     }
-} 
+}

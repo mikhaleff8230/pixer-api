@@ -22,6 +22,7 @@ class PlaceFeedQuery
                 'title',
                 'slug',
                 'user_id',
+                'community_id',
                 'created_at',
             ])
             // Сортировка для cursor-based pagination: created_at DESC, id DESC
@@ -77,6 +78,7 @@ class PlaceFeedQuery
             'hashtags' => function ($q) {
                 $q->select(['hashtags.id', 'hashtags.name', 'hashtags.slug']);
             },
+            'community:id,name,slug',
         ])
         // Подсчитываем likes и comments без загрузки самих записей
         ->withCount([

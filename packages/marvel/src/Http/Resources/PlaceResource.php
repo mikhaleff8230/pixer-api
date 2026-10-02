@@ -52,6 +52,18 @@ class PlaceResource extends JsonResource
             ],
             'title' => $this->title,
             'description' => $this->description,
+            'location' => $this->location,
+            'alt_text' => $this->alt_text,
+            'allow_comments' => (bool) $this->allow_comments,
+            'community' => $this->whenLoaded('community', function () {
+                return $this->community ? [
+                    'id' => $this->community->id,
+                    'name' => $this->community->name,
+                    'slug' => $this->community->slug,
+                    'avatar' => $this->community->avatar,
+                    'cover' => $this->community->cover,
+                ] : null;
+            }),
             'images' => $images,
             'videos' => $videos,
             'hashtags' => $this->whenLoaded('hashtags', function () {
@@ -143,4 +155,4 @@ class PlaceResource extends JsonResource
     }
 
     // Метод buildFullUrl удален - теперь используются accessor'ы из моделей
-} 
+}

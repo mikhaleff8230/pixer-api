@@ -14,6 +14,11 @@ class PlaceFeedResource extends JsonResource
             'slug' => $this->slug,
             'url' => $this->url,
             'created_at' => $this->created_at,
+            'community' => $this->whenLoaded('community', fn () => $this->community ? [
+                'id' => $this->community->id,
+                'name' => $this->community->name,
+                'slug' => $this->community->slug,
+            ] : null),
 
             // ✅ ЕДИНЫЙ КОНТРАКТ
             'images' => $this->relationLoaded('images')

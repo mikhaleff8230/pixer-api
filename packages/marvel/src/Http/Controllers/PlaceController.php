@@ -114,7 +114,7 @@ class PlaceController extends CoreController
 
     public function index(Request $request)
     {
-        $query = Place::with(['images', 'videos', 'hashtags', 'user', 'likes', 'products', 'wishlists'])->latest();
+        $query = Place::with(['images', 'videos', 'hashtags', 'user', 'community', 'likes', 'products', 'wishlists'])->latest();
 
         // Лимит
         $limit = $request->get('limit', 20);
@@ -495,7 +495,7 @@ class PlaceController extends CoreController
         } else {
             // Старый формат: просто ID (для обратной совместимости)
             // Редиректим на новый формат
-            $place = Place::with(['images', 'videos', 'hashtags', 'user.profile', 'likes', 'products', 'wishlists'])->findOrFail($slugId);
+            $place = Place::with(['images', 'videos', 'hashtags', 'user.profile', 'community', 'likes', 'products', 'wishlists'])->findOrFail($slugId);
             return redirect($place->url, 301);
         }
     }
@@ -518,20 +518,35 @@ class PlaceController extends CoreController
             $data = $request->validate([
                 'title' => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'images' => 'nullable|array|max:5',
+                'images' => 'nullable|array|max:20',
                 'images.*' => 'file|image|max:5120', // до 5 МБ на файл
                 'video' => 'nullable|file|mimetypes:video/mp4,video/webm|max:40960', // до 40 МБ
+                'videos' => 'nullable|array|max:20',
+                'videos.*' => 'file|mimetypes:video/mp4,video/webm|max:40960',
                 'hashtags' => 'nullable|array',
                 'hashtags.*' => 'string|max:50',
                 'product_ids' => 'nullable|array',
                 'product_ids.*' => 'exists:products,id',
+                'community_id' => 'nullable|exists:communities,id',
+                'location' => 'nullable|string|max:255',
+                'alt_text' => 'nullable|string|max:1000',
+                'allow_comments' => 'nullable|boolean',
             ], [
-                'images.max' => 'Максимальное количество изображений - 5',
+                'images.max' => 'Максимальное количество медиафайлов - 20',
                 'images.*.max' => 'Размер каждого изображения не должен превышать 5 МБ',
                 'images.*.image' => 'Файл должен быть изображением',
                 'video.max' => 'Объем файла должен быть не больше 40 мб',
                 'video.mimetypes' => 'Видео должно быть в формате MP4 или WebM',
             ]);
+
+            $mediaCount = count($request->file('images', []))
+                + count($request->file('videos', []))
+                + ($request->hasFile('video') ? 1 : 0);
+            if ($mediaCount > 20) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'media' => ['Максимальное количество фото и видео - 20'],
+                ]);
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error('PlaceController::store - ошибка валидации', [
                 'errors' => $e->errors(),
@@ -551,10 +566,26 @@ class PlaceController extends CoreController
         }
 
         try {
+            if (!empty($data['community_id'])) {
+                $community = \Marvel\Database\Models\Community::where('status', 'active')->findOrFail($data['community_id']);
+                $profile = $request->user()->profile;
+                $isActiveMember = $profile && $community->members()
+                    ->where('user_profiles.id', $profile->id)
+                    ->wherePivot('status', 'active')
+                    ->exists();
+                if ($community->posting_policy === 'members_only' && !$isActiveMember) {
+                    abort(403, 'Join the community before publishing');
+                }
+            }
+
             $place = Place::create([
                 'user_id' => $request->user()->id,
+                'community_id' => $data['community_id'] ?? null,
                 'title' => $data['title'],
                 'description' => $data['description'] ?? null,
+                'location' => $data['location'] ?? null,
+                'alt_text' => $data['alt_text'] ?? null,
+                'allow_comments' => $data['allow_comments'] ?? true,
             ]);
 
             // Сохраняем изображения (в S3)
@@ -719,8 +750,12 @@ class PlaceController extends CoreController
             }
 
             // Сохраняем видео (в S3)
+            $videoFiles = $request->file('videos', []);
             if ($request->hasFile('video')) {
-                $file = $request->file('video');
+                $videoFiles[] = $request->file('video');
+            }
+
+            foreach ($videoFiles as $file) {
                 Log::info('PlaceController::store - сохраняем видео', [
                     'file_name' => $file->getClientOriginalName(),
                     'file_size' => $file->getSize(),
@@ -759,7 +794,9 @@ class PlaceController extends CoreController
                     ]);
                     // Не прерываем создание плейса, если генерация превью не удалась
                 }
-            } else {
+            }
+
+            if (empty($videoFiles)) {
                 Log::info('PlaceController::store - видео файл не найден');
             }
 
@@ -790,7 +827,7 @@ class PlaceController extends CoreController
                 $place->products()->sync($data['product_ids']);
             }
 
-            return new PlaceResource($place->fresh(['images', 'videos', 'hashtags', 'user.profile', 'likes', 'products']));
+            return new PlaceResource($place->fresh(['images', 'videos', 'hashtags', 'user.profile', 'community', 'likes', 'products']));
         } catch (\Exception $e) {
             Log::error('PlaceController::store - критическая ошибка при создании плейса', [
                 'message' => $e->getMessage(),
@@ -854,6 +891,10 @@ class PlaceController extends CoreController
                 'hashtags.*' => 'string|max:50',
                 'product_ids' => 'nullable|array',
                 'product_ids.*' => 'exists:products,id',
+                'community_id' => 'nullable|exists:communities,id',
+                'location' => 'nullable|string|max:255',
+                'alt_text' => 'nullable|string|max:1000',
+                'allow_comments' => 'nullable|boolean',
             ], [
                 'video.max' => 'Объем файла должен быть не больше 40 мб',
                 'video.mimetypes' => 'Видео должно быть в формате MP4 или WebM',
@@ -900,6 +941,10 @@ class PlaceController extends CoreController
         $place->update([
             'title' => $data['title'] ?? $place->title,
             'description' => $data['description'] ?? $place->description,
+            'community_id' => array_key_exists('community_id', $data) ? $data['community_id'] : $place->community_id,
+            'location' => array_key_exists('location', $data) ? $data['location'] : $place->location,
+            'alt_text' => array_key_exists('alt_text', $data) ? $data['alt_text'] : $place->alt_text,
+            'allow_comments' => array_key_exists('allow_comments', $data) ? $data['allow_comments'] : $place->allow_comments,
         ]);
 
         // Обрабатываем изображения
@@ -1087,7 +1132,7 @@ class PlaceController extends CoreController
             'images_count' => count($imageUrls),
         ]);
 
-        return new PlaceResource($place->fresh(['images', 'videos', 'hashtags', 'user.profile', 'likes', 'products']));
+        return new PlaceResource($place->fresh(['images', 'videos', 'hashtags', 'user.profile', 'community', 'likes', 'products']));
     }
 
     public function destroy($id)
@@ -1200,7 +1245,7 @@ class PlaceController extends CoreController
     public function placesByHashtag(Request $request, $tag)
     {
         $limit = $request->get('limit', 20);
-        $query = Place::with(['images', 'videos', 'hashtags', 'user', 'likes', 'products', 'wishlists'])->latest();
+        $query = Place::with(['images', 'videos', 'hashtags', 'user', 'community', 'likes', 'products', 'wishlists'])->latest();
         $query->whereHas('hashtags', function ($q) use ($tag) {
             $q->where('name', $tag);
         });
@@ -1217,9 +1262,9 @@ class PlaceController extends CoreController
         $user = $request->user();
         $wishlist = \Marvel\Database\Models\PlaceWishlist::where('user_id', $user->id)->pluck('place_id');
         $places = Place::whereIn('id', $wishlist)
-            ->with(['images', 'videos', 'hashtags', 'user', 'likes', 'products', 'wishlists'])
+            ->with(['images', 'videos', 'hashtags', 'user', 'community', 'likes', 'products', 'wishlists'])
             ->latest()
             ->paginate($limit);
         return PlaceResource::collection($places);
     }
-} 
+}

@@ -23,6 +23,8 @@ class Category extends Model
 
     protected $casts = [
         'image' => 'json',
+        'menu_icon' => 'json',
+        'menu_banner' => 'json',
         'parent' => 'integer',
         'type_id' => 'integer',
         'sort_order' => 'integer',

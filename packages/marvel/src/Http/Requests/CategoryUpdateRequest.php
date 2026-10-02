@@ -34,6 +34,8 @@ class CategoryUpdateRequest extends FormRequest
             'type_id'     => ['integer'],
             'icon'        => ['nullable', 'string'],
             'image'       => ['array'],
+            'menu_icon'   => ['nullable', 'array'],
+            'menu_banner' => ['nullable', 'array'],
             'details'     => ['nullable', 'string'],
             'language'     => ['nullable', 'string'],
             'parent'      => ['nullable', 'integer'],
