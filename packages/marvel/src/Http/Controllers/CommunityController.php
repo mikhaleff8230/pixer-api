@@ -52,8 +52,22 @@ class CommunityController extends CoreController
         return $community;
     }
 
-    public function join(Request $request, Community $community)
+    private function resolveCommunity(Community|string|int $community): Community
     {
+        if ($community instanceof Community && $community->exists && $community->getKey()) {
+            return $community;
+        }
+
+        $communityId = $community instanceof Community
+            ? request()->route('community')
+            : $community;
+
+        return Community::query()->where('status', 'active')->findOrFail($communityId);
+    }
+
+    public function join(Request $request, Community|string|int $community)
+    {
+        $community = $this->resolveCommunity($community);
         $profile = $request->user()->profile;
         abort_unless($profile, 422, 'Social profile is required');
         $community->members()->syncWithoutDetaching([
@@ -64,8 +78,9 @@ class CommunityController extends CoreController
         return response()->json(['joined' => true, 'members_count' => $community->members_count]);
     }
 
-    public function toggleMembership(Request $request, Community $community)
+    public function toggleMembership(Request $request, Community|string|int $community)
     {
+        $community = $this->resolveCommunity($community);
         $profile = $request->user()->profile;
         abort_unless($profile, 422, 'Social profile is required');
         $joined = $community->members()->where('user_profiles.id', $profile->id)->exists();
@@ -90,8 +105,9 @@ class CommunityController extends CoreController
         ]);
     }
 
-    public function leave(Request $request, Community $community)
+    public function leave(Request $request, Community|string|int $community)
     {
+        $community = $this->resolveCommunity($community);
         $profile = $request->user()->profile;
         abort_unless($profile, 422, 'Social profile is required');
         $membership = $community->members()->where('user_profiles.id', $profile->id)->first();
@@ -102,8 +118,9 @@ class CommunityController extends CoreController
         return response()->json(['joined' => false, 'members_count' => $community->members_count]);
     }
 
-    public function places(Request $request, Community $community)
+    public function places(Request $request, Community|string|int $community)
     {
+        $community = $this->resolveCommunity($community);
         $places = $community->places()
             ->with(['images', 'videos', 'hashtags', 'user.profile', 'community', 'likes', 'products', 'wishlists'])
             ->latest()
