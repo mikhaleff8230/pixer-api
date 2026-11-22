@@ -14,6 +14,8 @@ use Marvel\Enums\Permission;
 use App\Http\Controllers\Admin\ImpersonationController;
 use App\Http\Controllers\Admin\YandexDirectController;
 use App\Http\Controllers\PushSubscriptionController;
+use App\Http\Controllers\TelegramImportController;
+use App\Http\Controllers\TelegramImportIngestController;
 
 /*
 |--------------------------------------------------------------------------
@@ -106,6 +108,27 @@ Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN])->prefix
     Route::post('/homepage-banners/settings', [App\Http\Controllers\HomepageBannerController::class, 'updateSettings']);
     Route::post('/homepage-banners/{banner}', [App\Http\Controllers\HomepageBannerController::class, 'updateOne']);
     Route::delete('/homepage-banners/{banner}', [App\Http\Controllers\HomepageBannerController::class, 'destroy']);
+});
+
+Route::middleware(['auth:api', 'permission:' . Permission::SUPER_ADMIN . '|' . Permission::STORE_OWNER])
+    ->prefix('telegram-import')->group(function () {
+        Route::get('/stats', [TelegramImportController::class, 'stats']);
+        Route::get('/channels', [TelegramImportController::class, 'index']);
+        Route::post('/channels', [TelegramImportController::class, 'store']);
+        Route::patch('/channels/{channel}', [TelegramImportController::class, 'update']);
+        Route::delete('/channels/{channel}', [TelegramImportController::class, 'destroy']);
+        Route::post('/channels/{channel}/sync', [TelegramImportController::class, 'sync']);
+        Route::post('/channels/{channel}/pause', [TelegramImportController::class, 'pause']);
+        Route::get('/posts', [TelegramImportController::class, 'posts']);
+        Route::post('/posts/bulk', [TelegramImportController::class, 'bulk']);
+        Route::post('/posts/{post}/retry', [TelegramImportController::class, 'retry']);
+    });
+
+Route::middleware('throttle:120,1')->prefix('internal/telegram-import')->group(function () {
+    Route::get('/channels', [TelegramImportIngestController::class, 'channels']);
+    Route::post('/ingest', [TelegramImportIngestController::class, 'ingest']);
+    Route::post('/error', [TelegramImportIngestController::class, 'error']);
+    Route::post('/channels/{channel}/complete', [TelegramImportIngestController::class, 'complete']);
 });
 
 // Маршрут для приема платежей ЮKassa (только для продакшена)

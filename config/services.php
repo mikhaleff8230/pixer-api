@@ -133,4 +133,8 @@ return [
         'sms_template' => env('REDSMS_SMS_TEMPLATE', 'Ваш код подтверждения: {code}'),
     ],
 
+    'telegram_import' => [
+        'internal_token' => env('TELEGRAM_IMPORT_INTERNAL_TOKEN'),
+    ],
+
 ];

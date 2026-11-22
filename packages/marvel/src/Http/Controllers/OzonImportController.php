@@ -2,23 +2,20 @@
 
 namespace Marvel\Http\Controllers;
 
+use App\Services\ProductDraftImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Marvel\Database\Models\Product;
 use Marvel\Database\Models\Shop;
 use Marvel\Database\Models\Type;
-use Marvel\Enums\ProductStatus;
 use Marvel\Enums\ProductType;
-use Marvel\Services\ArticleGeneratorService;
 use Marvel\Services\OzonImageImportService;
-use Marvel\Services\ProductSlugService;
 
 class OzonImportController extends CoreController
 {
-    public function store(Request $request, OzonImageImportService $imageImporter): JsonResponse
+    public function store(Request $request, OzonImageImportService $imageImporter, ProductDraftImportService $drafts): JsonResponse
     {
         $validated = $request->validate([
             'source_platform' => ['required', 'in:ozon'],
@@ -114,55 +111,31 @@ class OzonImportController extends CoreController
         $sellingPrice = (float) ceil(($sourcePrice + $additionalCosts) * (1 + $markupPercent / 100));
         $images = $imageImporter->import($validated['images'] ?? []);
 
-        $product = DB::transaction(function () use (
-            $validated, $shop, $ozonType, $sourceUrl, $sourceProductId,
-            $sourcePrice, $markupPercent, $additionalCosts, $sellingPrice, $images, $actor
-        ) {
-            $slug = ProductSlugService::generateForNewProduct($validated['title'], $validated['title']);
-            $product = Product::create([
-                'name' => $validated['title'],
-                'slug' => $slug['slug'],
-                'slug_numeric_code' => $slug['slug_numeric_code'],
-                // Ozon.ru content is imported into the Russian catalog. Without
-                // this explicit value the database default (`en`) makes the
-                // draft invisible to Seller Admin requests with `language=ru`.
-                'language' => 'ru',
-                'description' => $validated['description'] ?? '',
-                'type_id' => $ozonType->id,
-                'shop_id' => $shop->id,
-                'price' => $sellingPrice,
-                'sale_price' => null,
-                'min_price' => $sellingPrice,
-                'max_price' => $sellingPrice,
-                'quantity' => 1,
-                'unit' => 'шт.',
-                'in_stock' => true,
-                'is_taxable' => false,
-                'is_digital' => false,
-                'is_external' => false,
-                'product_type' => ProductType::SIMPLE,
-                'status' => ProductStatus::DRAFT,
-                'sku' => 'OZON'.substr(preg_replace('/\D+/', '', $sourceProductId), -24),
-                'internal_article' => ArticleGeneratorService::generateProductArticle(),
-                'preview_url' => $sourceUrl,
-                'image' => $images[0] ?? null,
-                'gallery' => $images,
-            ]);
-
-            $product->setMeta([
-                'source_platform' => 'ozon',
-                'source_product_id' => $sourceProductId,
-                'source_price' => $sourcePrice,
-                'markup_percent' => $markupPercent,
-                'additional_costs' => $additionalCosts,
-                'source_attributes' => json_encode($validated['attributes'] ?? [], JSON_UNESCAPED_UNICODE),
-                'content_rights_confirmed' => true,
-                'source_imported_by' => $actor->id,
-            ]);
-            $product->save();
-
-            return $product;
-        });
+        $product = $drafts->create([
+            'name' => $validated['title'],
+            'description' => $validated['description'] ?? '',
+            'type_id' => $ozonType->id,
+            'shop_id' => $shop->id,
+            'price' => $sellingPrice,
+            'min_price' => $sellingPrice,
+            'max_price' => $sellingPrice,
+            'quantity' => 1,
+            'in_stock' => true,
+            'product_type' => ProductType::SIMPLE,
+            'sku' => 'OZON'.substr(preg_replace('/\D+/', '', $sourceProductId), -24),
+            'preview_url' => $sourceUrl,
+            'image' => $images[0] ?? null,
+            'gallery' => $images,
+        ], [
+            'source_platform' => 'ozon',
+            'source_product_id' => $sourceProductId,
+            'source_price' => $sourcePrice,
+            'markup_percent' => $markupPercent,
+            'additional_costs' => $additionalCosts,
+            'source_attributes' => json_encode($validated['attributes'] ?? [], JSON_UNESCAPED_UNICODE),
+            'content_rights_confirmed' => true,
+            'source_imported_by' => $actor->id,
+        ]);
 
         return response()->json([
             'message' => 'Черновик товара создан',

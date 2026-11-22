@@ -1,0 +1,15 @@
+[Unit]
+Description=SANCAN Telegram Import Laravel Queue
+After=network-online.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sancan/pixer-api
+ExecStart=/usr/bin/php artisan queue:work database --queue=telegram-import --sleep=2 --tries=4 --timeout=180
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
