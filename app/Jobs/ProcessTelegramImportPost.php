@@ -25,7 +25,11 @@ class ProcessTelegramImportPost implements ShouldQueue, ShouldBeUnique
     public array $backoff = [15, 60, 300];
     public int $uniqueFor = 300;
 
-    public function __construct(public int $postId) { $this->onQueue('telegram-import'); }
+    public function __construct(public int $postId)
+    {
+        $this->onConnection('database');
+        $this->onQueue('telegram-import');
+    }
     public function uniqueId(): string { return 'telegram-post-'.$this->postId; }
 
     public function handle(TelegramProductNormalizer $normalizer, TelegramPricingService $pricing, ProductDraftImportService $drafts): void
