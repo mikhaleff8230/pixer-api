@@ -66,6 +66,44 @@ class Product extends Model
         'attribute_values', // Включаем attribute_values в JSON ответ
     ];
 
+    public function getSourcePlatformAttribute()
+    {
+        return $this->getMeta('source_platform');
+    }
+
+    public function getSourceProductIdAttribute()
+    {
+        return $this->getMeta('source_product_id');
+    }
+
+    public function getSourcePriceAttribute()
+    {
+        $value = $this->getMeta('source_price');
+        return $value === null ? null : (float) $value;
+    }
+
+    public function getSourceMarkupPercentAttribute()
+    {
+        $value = $this->getMeta('markup_percent');
+        return $value === null ? null : (float) $value;
+    }
+
+    public function getSourceAdditionalCostsAttribute()
+    {
+        $value = $this->getMeta('additional_costs');
+        return $value === null ? null : (float) $value;
+    }
+
+    public function getSourceAttributesAttribute(): array
+    {
+        $value = $this->getMeta('source_attributes');
+        if (is_array($value)) {
+            return $value;
+        }
+        $decoded = json_decode((string) $value, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
     /**
      * Return the sluggable configuration array for this model.
      *

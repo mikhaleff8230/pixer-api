@@ -24,6 +24,9 @@ use Marvel\Http\Controllers\OrderController;
 use Marvel\Http\Controllers\PaymentIntentController;
 use Marvel\Http\Controllers\PaymentMethodController;
 use Marvel\Http\Controllers\ProductController;
+use Marvel\Http\Controllers\OzonImportController;
+use Marvel\Http\Controllers\SancanImporterAuthController;
+use Marvel\Http\Controllers\WildberriesImportController;
 use Marvel\Http\Controllers\ProductWizardController;
 use Marvel\Http\Controllers\QuestionController;
 use Marvel\Http\Controllers\RefundController;
@@ -246,6 +249,16 @@ Route::post('shipments/webhook', [ShipmentController::class, 'webhook']);
 // Публичный маршрут для получения атрибутов товара (для фронтенда) - ДО apiResource
 // ВАЖНО: Этот маршрут должен быть доступен по /api/products/{id}/attributes для совместимости с фронтендом
 Route::prefix('api')->group(function () {
+    Route::post('/seller/import/auth/request', [SancanImporterAuthController::class, 'requestPairing'])->middleware('throttle:10,1');
+    Route::get('/seller/import/auth/status', [SancanImporterAuthController::class, 'status'])->middleware('throttle:60,1');
+    Route::group(['middleware' => ['auth:api', 'email.verified']], function () {
+        Route::get('/seller/import/shops', [SancanImporterAuthController::class, 'shops']);
+        Route::post('/seller/import/auth/approve', [SancanImporterAuthController::class, 'approve'])->middleware('throttle:10,1');
+        Route::delete('/seller/import/auth/token', [SancanImporterAuthController::class, 'revoke']);
+        Route::post('/seller/import/ozon', [OzonImportController::class, 'store'])->middleware('throttle:10,1');
+        Route::post('/seller/import/wildberries', [WildberriesImportController::class, 'store'])->middleware('throttle:10,1');
+    });
+
     Route::get('products/{productId}/attributes', [ProductAttributeController::class, 'getProductAttributes']);
     
     // Новый формат URL для всех товаров: /api/element/{slug}-{id}
@@ -651,6 +664,9 @@ Route::group(
         Route::delete('/products/wizard/variants/{id}', [ProductWizardController::class, 'deleteVariant'])->where('id', '[0-9]+');
         Route::post('/products/wizard/ungroup', [ProductWizardController::class, 'ungroupProducts']);
         Route::post('/products/wizard/create-group', [ProductWizardController::class, 'createGroup']);
+        Route::post('/products/bulk-category', [ProductController::class, 'bulkAssignCategory']);
+        Route::patch('/products/{id}/name', [ProductController::class, 'updateName'])->where('id', '[0-9]+');
+        Route::post('/products/bulk-status', [ProductController::class, 'bulkUpdateStatus']);
         
         // Product-Attribute management routes (GET уже публичный выше) - ДО apiResource('products')
         Route::post('/products/attributes/set', [ProductAttributeController::class, 'setProductAttributeValue']);

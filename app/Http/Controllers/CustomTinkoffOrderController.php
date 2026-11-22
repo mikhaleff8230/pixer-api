@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use App\Services\OrderLineItemService;
 use App\Services\Tinkoff\TinkoffService;
 use App\Services\Tinkoff\TinkoffConfig;
 use Marvel\Database\Repositories\OrderRepository;
@@ -23,7 +25,9 @@ class CustomTinkoffOrderController extends Controller
             $phone = $data['phone'] ?? $shipping['phone'] ?? '';
             $address = $data['address'] ?? $shipping['address'] ?? '';
             $comment = $data['note'] ?? $shipping['comment'] ?? '';
-            $amount = $data['amount'] ?? 0;
+            $lineItemService = app(OrderLineItemService::class);
+            $data['products'] = $lineItemService->resolve(is_array($data['products'] ?? null) ? $data['products'] : []);
+            $amount = $lineItemService->total($data['products']);
 
             // Логируем входящие данные для отладки
             \Log::info('CustomTinkoffOrderController: детали входящих данных', [
@@ -75,19 +79,18 @@ class CustomTinkoffOrderController extends Controller
 
             // Привязываем товары ПЕРЕД созданием дочерних заказов
             if (!empty($data['products'])) {
-                $products = [];
                 foreach ($data['products'] as $item) {
-                    $products[$item['product_id']] = [
+                    $order->products()->attach($item['product_id'], [
                         'order_quantity' => $item['order_quantity'],
                         'unit_price' => $item['unit_price'],
                         'subtotal' => $item['subtotal'],
-                        'variation_option_id' => $item['variation_option_id'] ?? null,
-                    ];
+                        'variation_option_id' => $item['variation_option_id'],
+                        'variation_snapshot' => $item['variation_snapshot'] ? json_encode($item['variation_snapshot'], JSON_UNESCAPED_UNICODE) : null,
+                    ]);
                 }
-                $order->products()->attach($products);
                 \Log::info('CustomTinkoffOrderController: товары привязаны к заказу', [
                     'order_id' => $order->id,
-                    'products_count' => count($products)
+                    'products_count' => count($data['products'])
                 ]);
             }
             
@@ -204,6 +207,8 @@ class CustomTinkoffOrderController extends Controller
                     'amount' => $amount,
                 ]
             ]);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Корзина изменилась.', 'errors' => $e->errors()], 422);
         } catch (\Throwable $e) {
             \Log::error('CustomTinkoffOrderController: ошибка', ['error' => $e->getMessage()]);
             return response()->json([
@@ -212,4 +217,4 @@ class CustomTinkoffOrderController extends Controller
             ], 500);
         }
     }
-} 
+}

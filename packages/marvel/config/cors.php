@@ -33,6 +33,7 @@ return [
 
     'allowed_origins_patterns' => [
         '/^https?:\/\/.*\.sancan\.ru$/',
+        '/^chrome-extension:\/\/[a-p]{32}$/',
     ],
 
     'allowed_headers' => ['*'],

@@ -30,6 +30,7 @@ use Marvel\Services\LocationService;
 use Marvel\Database\Models\Region;
 use Marvel\Database\Models\Shop;
 use Marvel\Enums\Permission;
+use Marvel\Enums\ProductStatus;
 use Laravel\Sanctum\PersonalAccessToken;
 
 
@@ -1128,6 +1129,18 @@ class ProductController extends CoreController
             
             // Преобразуем в массив безопасно
             try {
+                // Source metadata is only needed for marketplace-source products.
+                // Avoid six meta queries for every ordinary catalog product.
+                if (Str::contains(strtolower((string) $product->preview_url), ['ozon.ru', 'wildberries.ru'])) {
+                    $product->append([
+                        'source_platform',
+                        'source_product_id',
+                        'source_price',
+                        'source_markup_percent',
+                        'source_additional_costs',
+                        'source_attributes',
+                    ]);
+                }
                 $productArray = $product->toArray();
                 
                 // Логируем для отладки group_key и attribute_values
@@ -1361,6 +1374,127 @@ class ProductController extends CoreController
     {
         $request->id = $id;
         return $this->destroyProduct($request);
+    }
+
+    /**
+     * Replace the category for multiple products belonging to one authorized shop.
+     */
+    public function bulkAssignCategory(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'product_ids.*' => ['required', 'integer', 'distinct', 'exists:products,id'],
+            'category_id' => ['required', 'integer', 'exists:categories,id'],
+            'shop_id' => ['required', 'integer', 'exists:shops,id'],
+        ]);
+
+        $user = $request->user();
+        $shopId = (int) $validated['shop_id'];
+        $categoryId = (int) $validated['category_id'];
+        $productIds = array_map('intval', $validated['product_ids']);
+
+        if (!$this->repository->hasPermission($user, $shopId)) {
+            throw new AuthorizationException(NOT_AUTHORIZED);
+        }
+
+        $products = Product::query()
+            ->where('shop_id', $shopId)
+            ->whereIn('id', $productIds)
+            ->get();
+
+        if ($products->count() !== count($productIds)) {
+            return response()->json([
+                'message' => 'Список товаров изменился или содержит товары другого магазина.',
+            ], 422);
+        }
+
+        $hasLegacyCategoryColumn = Schema::hasColumn('products', 'category_id');
+
+        DB::transaction(function () use ($products, $categoryId, $hasLegacyCategoryColumn) {
+            foreach ($products as $product) {
+                if ($hasLegacyCategoryColumn) {
+                    $product->category_id = $categoryId;
+                    $product->save();
+                }
+                $product->categories()->sync([$categoryId]);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Категория назначена выбранным товарам: '.$products->count(),
+            'updated_count' => $products->count(),
+            'category_id' => $categoryId,
+        ]);
+    }
+
+    /**
+     * Update only the product name from the inline product-list editor.
+     */
+    public function updateName(Request $request, $id): JsonResponse
+    {
+        $request->merge(['name' => trim((string) $request->input('name'))]);
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $product = $this->repository->findOrFail($id);
+        if (!$this->repository->hasPermission($request->user(), $product->shop_id)) {
+            throw new AuthorizationException(NOT_AUTHORIZED);
+        }
+
+        $product->name = $validated['name'];
+        $product->save();
+
+        return response()->json($product->fresh(['categories', 'shop', 'type']));
+    }
+
+    /**
+     * Update the status for multiple products belonging to one authorized shop.
+     */
+    public function bulkUpdateStatus(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'product_ids.*' => ['required', 'integer', 'distinct', 'exists:products,id'],
+            'status' => ['required', 'string', 'in:'.implode(',', [
+                ProductStatus::PUBLISH,
+                ProductStatus::DRAFT,
+                ProductStatus::UNPUBLISH,
+            ])],
+            'shop_id' => ['required', 'integer', 'exists:shops,id'],
+        ]);
+
+        $user = $request->user();
+        $shopId = (int) $validated['shop_id'];
+        $productIds = array_map('intval', $validated['product_ids']);
+
+        if (!$this->repository->hasPermission($user, $shopId)) {
+            throw new AuthorizationException(NOT_AUTHORIZED);
+        }
+
+        $products = Product::query()
+            ->where('shop_id', $shopId)
+            ->whereIn('id', $productIds)
+            ->get();
+
+        if ($products->count() !== count($productIds)) {
+            return response()->json([
+                'message' => 'Список товаров изменился или содержит товары другого магазина.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($products, $validated) {
+            foreach ($products as $product) {
+                $product->status = $validated['status'];
+                $product->save();
+            }
+        });
+
+        return response()->json([
+            'message' => 'Статус изменён у выбранных товаров: '.$products->count(),
+            'updated_count' => $products->count(),
+            'status' => $validated['status'],
+        ]);
     }
 
     public function destroyProduct(Request $request)

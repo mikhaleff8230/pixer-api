@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
+use App\Services\OrderLineItemService;
 use App\Services\YooKassa\YooKassaService;
 use App\Services\YooKassa\YooKassaConfig;
 use Marvel\Database\Models\Product;
@@ -27,7 +29,9 @@ class CustomYooKassaOrderController extends Controller
             $phone = $data['phone'] ?? $shipping['phone'] ?? '';
             $address = $data['address'] ?? $shipping['address'] ?? '';
             $comment = $data['note'] ?? $shipping['comment'] ?? '';
-            $amount = $data['amount'] ?? 0;
+            $lineItemService = app(OrderLineItemService::class);
+            $data['products'] = $lineItemService->resolve(is_array($data['products'] ?? null) ? $data['products'] : []);
+            $amount = $lineItemService->total($data['products']);
             $language = $data['language'] ?? 'ru'; // Получаем язык из запроса или дефолт 'ru'
 
             // Чтобы выдача цифровых товаров могла сопоставить гостевой заказ с аккаунтом по email
@@ -102,31 +106,19 @@ class CustomYooKassaOrderController extends Controller
 
             // Привязываем товары ПЕРЕД созданием дочерних заказов
             if (!empty($data['products'])) {
-                $products = [];
                 foreach ($data['products'] as $item) {
-                    // Проверяем существование товара
-                    if (\Marvel\Database\Models\Product::where('id', $item['product_id'])->exists()) {
-                        $products[$item['product_id']] = [
-                            'order_quantity' => $item['order_quantity'],
-                            'unit_price' => $item['unit_price'],
-                            'subtotal' => $item['subtotal'],
-                            'variation_option_id' => $item['variation_option_id'] ?? null,
-                        ];
-                    } else {
-                        \Log::warning('CustomYooKassaOrderController: товар не найден', [
-                            'product_id' => $item['product_id'],
-                            'order_id' => $order->id
-                        ]);
-                    }
-                }
-                // Привязываем товары только если есть существующие
-                if (!empty($products)) {
-                    $order->products()->attach($products);
-                    \Log::info('CustomYooKassaOrderController: товары привязаны к заказу', [
-                        'order_id' => $order->id,
-                        'products_count' => count($products)
+                    $order->products()->attach($item['product_id'], [
+                        'order_quantity' => $item['order_quantity'],
+                        'unit_price' => $item['unit_price'],
+                        'subtotal' => $item['subtotal'],
+                        'variation_option_id' => $item['variation_option_id'],
+                        'variation_snapshot' => $item['variation_snapshot'] ? json_encode($item['variation_snapshot'], JSON_UNESCAPED_UNICODE) : null,
                     ]);
                 }
+                \Log::info('CustomYooKassaOrderController: товары привязаны к заказу', [
+                    'order_id' => $order->id,
+                    'products_count' => count($data['products'])
+                ]);
             }
             
             // Создаем дочерние заказы для каждого магазина ПЕРЕД вызовом события
@@ -299,6 +291,8 @@ class CustomYooKassaOrderController extends Controller
                     'amount' => $amount,
                 ]
             ]);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Корзина изменилась.', 'errors' => $e->errors()], 422);
         } catch (\Throwable $e) {
             \Log::error('CustomYooKassaOrderController: ошибка', ['error' => $e->getMessage()]);
             return response()->json([

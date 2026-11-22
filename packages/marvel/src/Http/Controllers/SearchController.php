@@ -139,12 +139,13 @@ class SearchController extends CoreController
             foreach ($results['hits']['hits'] as $hit) {
                 $source = $hit['_source'];
                 $score = $hit['_score'];
+                $documentId = $source['id'] ?? $hit['_id'];
                 
                 if ($type === 'products') {
                     // Добавляем товары
                     $suggestions['products'][] = [
                         'text' => $source['name'],
-                        'id' => $source['id'],
+                        'id' => $documentId,
                         'score' => $score,
                     ];
                     
@@ -177,7 +178,7 @@ class SearchController extends CoreController
                     // Для других типов
                     $suggestions['products'][] = [
                         'text' => $source['title'],
-                        'id' => $source['id'],
+                        'id' => $documentId,
                         'score' => $score,
                     ];
                 }
@@ -253,11 +254,12 @@ class SearchController extends CoreController
             
             foreach ($results['hits']['hits'] as $hit) {
                 $source = $hit['_source'];
+                $documentId = $source['id'] ?? $hit['_id'];
                 $text = $type === 'products' ? ($source['name'] ?? '') : ($source['title'] ?? '');
                 
                 // Добавляем объект с полной информацией
                 $suggestions[] = [
-                    'id' => $source['id'],
+                    'id' => $documentId,
                     'text' => $text,
                     'type' => $type,
                 ];
@@ -415,10 +417,10 @@ class SearchController extends CoreController
                                 'nested' => [
                                     'path' => 'tags',
                                     'query' => [
-                                        'match_phrase_prefix' => [
+                                        'wildcard' => [
                                             'tags.name' => [
-                                                'query' => $query,
-                                                'max_expansions' => 5,
+                                                'value' => mb_strtolower($query) . '*',
+                                                'case_insensitive' => true,
                                                 'boost' => 2.0,
                                             ],
                                         ],
@@ -575,6 +577,7 @@ class SearchController extends CoreController
         // Format hits
         foreach ($results['hits']['hits'] as $hit) {
             $item = $hit['_source'];
+            $item['id'] = $item['id'] ?? $hit['_id'];
             $item['score'] = $hit['_score'];
             $data['items'][] = $item;
         }
@@ -651,10 +654,10 @@ class SearchController extends CoreController
                                 'nested' => [
                                     'path' => 'tags',
                                     'query' => [
-                                        'match_phrase_prefix' => [
+                                        'wildcard' => [
                                             'tags.name' => [
-                                                'query' => $query,
-                                                'max_expansions' => 5,
+                                                'value' => mb_strtolower($query) . '*',
+                                                'case_insensitive' => true,
                                                 'boost' => 2.0,
                                             ],
                                         ],
