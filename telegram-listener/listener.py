@@ -45,7 +45,7 @@ class Listener:
             int(os.environ["TELEGRAM_API_ID"]),
             os.environ["TELEGRAM_API_HASH"],
         )
-        self.http = httpx.AsyncClient(timeout=httpx.Timeout(90), headers={"Authorization": f"Bearer {self.token}"})
+        self.http = httpx.AsyncClient(timeout=httpx.Timeout(90), headers={"X-Sancan-Internal-Token": self.token})
         self.sources: dict[str, Source] = {}
 
     async def refresh_sources(self) -> None:

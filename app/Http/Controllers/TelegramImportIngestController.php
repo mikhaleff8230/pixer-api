@@ -77,7 +77,7 @@ class TelegramImportIngestController extends Controller
     private function authorizeListener(Request $request): void
     {
         $expected = (string) config('services.telegram_import.internal_token');
-        $actual = (string) $request->bearerToken();
+        $actual = (string) ($request->header('X-Sancan-Internal-Token') ?: $request->bearerToken());
         abort_unless($expected !== '' && $actual !== '' && hash_equals($expected, $actual), 401);
     }
 }
