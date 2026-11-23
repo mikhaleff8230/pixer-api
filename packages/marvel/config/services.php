@@ -145,4 +145,8 @@ return [
         'redirect' => env('YANDEX_REDIRECT_URI', 'https://sancan.ru/auth/yandex/callback'),
     ],
 
+    'telegram_import' => [
+        'internal_token' => env('TELEGRAM_IMPORT_INTERNAL_TOKEN'),
+    ],
+
 ];
